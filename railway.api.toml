@@ -1,5 +1,6 @@
 # Railway config for the API service.
-# In Railway: Settings → Config-as-code → set path to railway.api.toml
+# In Railway → api → Settings → Config-as-code → Config File Path:
+#   railway.api.toml
 
 [build]
 builder = "NIXPACKS"

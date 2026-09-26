@@ -1,5 +1,9 @@
 # Railway config for the web (Next.js) service.
-# In Railway: Settings → Config-as-code → set path to railway.web.toml
+# In Railway → web → Settings → Config-as-code → Config File Path:
+#   railway.web.toml
+#
+# Also set variable:
+#   NEXT_PUBLIC_API_URL=https://<your-api-domain>/api/v1
 
 [build]
 builder = "NIXPACKS"
