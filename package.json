@@ -11,7 +11,7 @@
     "build:api": "pnpm --filter @mh/shared build && pnpm --filter @mh/api prisma:generate && pnpm --filter @mh/api build",
     "build:web": "pnpm --filter @mh/shared build && pnpm --filter @mh/web build",
     "start": "node apps/web/server.js",
-    "start:api": "pnpm --filter @mh/api exec prisma migrate deploy && pnpm --filter @mh/api start",
+    "start:api": "npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && node apps/api/dist/main.js",
     "start:web": "node apps/web/server.js",
     "lint": "turbo lint",
     "format": "prettier --write .",
