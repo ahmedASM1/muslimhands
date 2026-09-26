@@ -70,7 +70,8 @@ export function loadConfiguration(): AppConfig {
   const config: AppConfig = {
     nodeEnv: process.env.NODE_ENV ?? 'development',
     host: process.env.API_HOST ?? '0.0.0.0',
-    port: Number(process.env.API_PORT ?? 3001),
+    // Railway injects PORT; fall back to API_PORT for local/dev.
+    port: Number(process.env.PORT ?? process.env.API_PORT ?? 3001),
     webOrigin: process.env.WEB_ORIGIN ?? 'http://localhost:3000',
     databaseUrl: required('DATABASE_URL'),
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',

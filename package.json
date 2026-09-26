@@ -8,6 +8,10 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
+    "build:api": "pnpm --filter @mh/shared build && pnpm --filter @mh/api prisma:generate && pnpm --filter @mh/api build",
+    "build:web": "pnpm --filter @mh/shared build && pnpm --filter @mh/web build",
+    "start:api": "pnpm --filter @mh/api exec prisma migrate deploy && pnpm --filter @mh/api start",
+    "start:web": "pnpm --filter @mh/web start",
     "lint": "turbo lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
