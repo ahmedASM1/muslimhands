@@ -10,6 +10,7 @@
     "build": "turbo build",
     "build:api": "pnpm --filter @mh/shared build && pnpm --filter @mh/api prisma:generate && pnpm --filter @mh/api build",
     "build:web": "pnpm --filter @mh/shared build && pnpm --filter @mh/web build",
+    "start": "pnpm run start:web",
     "start:api": "pnpm --filter @mh/api exec prisma migrate deploy && pnpm --filter @mh/api start",
     "start:web": "pnpm --filter @mh/web start",
     "lint": "turbo lint",
