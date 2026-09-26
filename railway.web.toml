@@ -11,6 +11,6 @@ nixpacksConfigPath = "nixpacks.web.toml"
 buildCommand = "pnpm install --frozen-lockfile && pnpm run build:web"
 
 [deploy]
-startCommand = "pnpm run start:web"
+startCommand = "node apps/web/server.js"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
