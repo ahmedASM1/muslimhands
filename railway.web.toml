@@ -1,16 +1,16 @@
 # Railway config for the web (Next.js) service.
-# In Railway → web → Settings → Config-as-code → Config File Path:
-#   railway.web.toml
+# In Railway → web → Settings:
+#   - Builder: Dockerfile
+#   - Dockerfile path: Dockerfile.web
+# Or set Config File Path to railway.web.toml if still available.
 #
-# Also set variable:
+# Required variable (build-time):
 #   NEXT_PUBLIC_API_URL=https://<your-api-domain>/api/v1
 
 [build]
-builder = "NIXPACKS"
-nixpacksConfigPath = "nixpacks.web.toml"
-buildCommand = "pnpm install --frozen-lockfile && pnpm run build:web"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.web"
 
 [deploy]
-startCommand = "node apps/web/server.js"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
