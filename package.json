@@ -12,7 +12,7 @@
     "build:web": "pnpm --filter @mh/shared build && pnpm --filter @mh/web build",
     "start": "pnpm run start:web",
     "start:api": "pnpm --filter @mh/api exec prisma migrate deploy && pnpm --filter @mh/api start",
-    "start:web": "pnpm --filter @mh/web exec next start --hostname 0.0.0.0 --port ${PORT:-8080}",
+    "start:web": "pnpm --filter @mh/web start",
     "lint": "turbo lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

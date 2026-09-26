@@ -11,7 +11,7 @@
     }
   },
   "deploy": {
-    "startCommand": "pnpm --filter @mh/web exec next start --hostname 0.0.0.0 --port $PORT",
+    "startCommand": "pnpm run start:web",
     "inputs": [{ "step": "build" }]
   }
 }
