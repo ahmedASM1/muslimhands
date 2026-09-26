@@ -1,0 +1,18 @@
+ALTER TABLE "units" ADD COLUMN IF NOT EXISTS "description" TEXT;
+ALTER TABLE "units" ADD COLUMN IF NOT EXISTS "is_active" BOOLEAN NOT NULL DEFAULT true;
+CREATE INDEX IF NOT EXISTS "units_is_active_idx" ON "units"("is_active");
+
+CREATE INDEX IF NOT EXISTS "medicine_categories_name_idx" ON "medicine_categories"("name");
+CREATE INDEX IF NOT EXISTS "medicines_sku_idx" ON "medicines"("sku");
+CREATE INDEX IF NOT EXISTS "medicines_barcode_idx" ON "medicines"("barcode");
+CREATE INDEX IF NOT EXISTS "medicine_batches_batch_number_idx" ON "medicine_batches"("batch_number");
+
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'DEACTIVATE_MEDICINE';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'CREATE_CATEGORY';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'UPDATE_CATEGORY';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'DEACTIVATE_CATEGORY';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'CREATE_UNIT';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'UPDATE_UNIT';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'DEACTIVATE_UNIT';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'CREATE_BATCH';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'UPDATE_BATCH';

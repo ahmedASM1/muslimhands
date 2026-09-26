@@ -1,0 +1,959 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  LOCKED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  UNSPECIFIED
+}
+
+enum DosageForm {
+  TABLET
+  CAPSULE
+  SYRUP
+  SUSPENSION
+  INJECTION
+  CREAM
+  OINTMENT
+  DROPS
+  INHALER
+  POWDER
+  OTHER
+}
+
+enum ReceiptStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+enum SupplyRequestStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  PARTIALLY_FULFILLED
+  FULFILLED
+  REJECTED
+  CANCELLED
+}
+
+enum TransferStatus {
+  DRAFT
+  PREPARED
+  IN_TRANSIT
+  SHIPPED
+  RECEIVED
+  PARTIALLY_RECEIVED
+  CANCELLED
+}
+
+enum DispensingStatus {
+  DRAFT
+  COMPLETED
+  CANCELLED
+}
+
+enum MovementType {
+  RECEIPT
+  TRANSFER_OUT
+  TRANSFER_IN
+  DISPENSE
+  RETURN
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  DAMAGE
+  EXPIRED
+}
+
+enum MovementReferenceType {
+  STOCK_RECEIPT
+  STOCK_TRANSFER
+  DISPENSING_RECORD
+  SUPPLY_REQUEST
+  ADJUSTMENT
+  DAMAGE
+  EXPIRY
+}
+
+enum LocationType {
+  WAREHOUSE
+  PHARMACY
+}
+
+enum NotificationType {
+  LOW_STOCK
+  OUT_OF_STOCK
+  EXPIRY_WARNING
+  EXPIRED_BATCH
+  EXPIRING_SOON
+  EXPIRED_STOCK
+  SUPPLY_REQUEST
+  SUPPLY_REQUEST_SUBMITTED
+  SUPPLY_REQUEST_APPROVED
+  SUPPLY_REQUEST_REJECTED
+  PENDING_SUPPLY_REQUEST
+  TRANSFER
+  TRANSFER_CREATED
+  TRANSFER_RECEIVED
+  TRANSFER_AWAITING_RECEIPT
+  SYSTEM
+}
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum AuditAction {
+  CREATE_MEDICINE
+  UPDATE_MEDICINE
+  DEACTIVATE_MEDICINE
+  CREATE_CATEGORY
+  UPDATE_CATEGORY
+  DEACTIVATE_CATEGORY
+  CREATE_UNIT
+  UPDATE_UNIT
+  DEACTIVATE_UNIT
+  CREATE_BATCH
+  UPDATE_BATCH
+  CREATE_RECEIPT
+  POST_RECEIPT
+  CANCEL_RECEIPT
+  CREATE_SUPPLY_REQUEST
+  SUBMIT_SUPPLY_REQUEST
+  APPROVE_SUPPLY_REQUEST
+  REJECT_SUPPLY_REQUEST
+  CANCEL_SUPPLY_REQUEST
+  CREATE_TRANSFER
+  PREPARE_TRANSFER
+  SHIP_TRANSFER
+  RECEIVE_TRANSFER
+  CANCEL_TRANSFER
+  DISPENSE_MEDICINE
+  CREATE_DISPENSING
+  COMPLETE_DISPENSING
+  CREATE_BENEFICIARY
+  UPDATE_BENEFICIARY
+  ACTIVATE_BENEFICIARY
+  DEACTIVATE_BENEFICIARY
+  EXPORT_REPORT
+  RUN_ALERT_EVALUATION
+  STOCK_ADJUSTMENT
+  MARK_DAMAGED
+  MARK_EXPIRED
+  LOGIN
+  LOGOUT
+  USER_CREATED
+  USER_UPDATED
+  CREATE_PHARMACY
+  UPDATE_PHARMACY
+  CREATE_WAREHOUSE
+  UPDATE_WAREHOUSE
+  INVITE_USER
+  ACCEPT_INVITATION
+  UPDATE_PROFILE
+  CHANGE_PASSWORD
+  UPDATE_SETTINGS
+  SEND_TEST_EMAIL
+  UPDATE_NOTIFICATION_PREFERENCES
+}
+
+/// Single-organization owner of warehouses, pharmacies, and users.
+/// This is not a multi-tenant SaaS tenant record.
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  warehouses  Warehouse[]
+  pharmacies  Pharmacy[]
+  users       User[]
+  invitations Invitation[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String     @id @default(uuid()) @db.Uuid
+  email          String     @unique
+  passwordHash   String?    @map("password_hash")
+  firstName      String     @map("first_name")
+  lastName       String     @map("last_name")
+  phone          String?
+  status         UserStatus @default(ACTIVE)
+  organizationId String     @map("organization_id") @db.Uuid
+  pharmacyId     String?    @map("pharmacy_id") @db.Uuid
+  warehouseId    String?    @map("warehouse_id") @db.Uuid
+  lastLoginAt    DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  organization        Organization         @relation(fields: [organizationId], references: [id])
+  pharmacy            Pharmacy?            @relation("UserPharmacy", fields: [pharmacyId], references: [id])
+  warehouse           Warehouse?           @relation("UserWarehouse", fields: [warehouseId], references: [id])
+  userRoles           UserRole[]
+  refreshTokens       RefreshToken[]
+  passwordResets      PasswordResetToken[]
+  invitationsSent     Invitation[]         @relation("InvitationInvitedBy")
+  invitationsReceived Invitation[]         @relation("InvitationUser")
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  emailLogs           EmailLog[]
+  notificationPreference NotificationPreference?
+  createdReceipts     StockReceipt[]       @relation("ReceiptCreatedBy")
+  postedReceipts      StockReceipt[]       @relation("ReceiptPostedBy")
+  createdRequests     SupplyRequest[]      @relation("RequestCreatedBy")
+  reviewedRequests    SupplyRequest[]      @relation("RequestReviewedBy")
+  createdTransfers    StockTransfer[]      @relation("TransferCreatedBy")
+  preparedTransfers   StockTransfer[]      @relation("TransferPreparedBy")
+  shippedTransfers    StockTransfer[]      @relation("TransferShippedBy")
+  receivedTransfers   StockTransfer[]      @relation("TransferReceivedBy")
+  dispensingRecords   DispensingRecord[]
+  stockMovements      StockMovement[]      @relation("MovementPerformedBy")
+
+  @@index([status])
+  @@index([organizationId])
+  @@index([pharmacyId])
+  @@index([warehouseId])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Invitation {
+  id             String           @id @default(uuid()) @db.Uuid
+  email          String
+  firstName      String           @map("first_name")
+  lastName       String           @map("last_name")
+  tokenHash      String           @unique @map("token_hash")
+  organizationId String           @map("organization_id") @db.Uuid
+  roleId         String           @map("role_id") @db.Uuid
+  userId         String?          @map("user_id") @db.Uuid
+  pharmacyId     String?          @map("pharmacy_id") @db.Uuid
+  warehouseId    String?          @map("warehouse_id") @db.Uuid
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime         @map("expires_at") @db.Timestamptz(6)
+  invitedById    String           @map("invited_by_id") @db.Uuid
+  acceptedAt     DateTime?        @map("accepted_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  role         Role         @relation(fields: [roleId], references: [id])
+  user         User?        @relation("InvitationUser", fields: [userId], references: [id])
+  pharmacy     Pharmacy?    @relation(fields: [pharmacyId], references: [id])
+  warehouse    Warehouse?   @relation(fields: [warehouseId], references: [id])
+  invitedBy    User         @relation("InvitationInvitedBy", fields: [invitedById], references: [id])
+
+  @@index([email, status])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("invitations")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+  invitations     Invitation[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  resource    String
+  action      String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rolePermissions RolePermission[]
+
+  @@unique([resource, action])
+  @@index([resource])
+  @@map("permissions")
+}
+
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid()) @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  userAgent String?   @map("user_agent")
+  ipAddress String?   @map("ip_address")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Unit {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  medicines Medicine[]
+
+  @@index([isActive])
+  @@map("units")
+}
+
+model MedicineCategory {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @unique
+  description String?
+  parentId    String?   @map("parent_id") @db.Uuid
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  parent    MedicineCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  MedicineCategory[] @relation("CategoryHierarchy")
+  medicines Medicine[]
+
+  @@index([name])
+  @@index([parentId])
+  @@index([isActive])
+  @@map("medicine_categories")
+}
+
+model Medicine {
+  id              String     @id @default(uuid()) @db.Uuid
+  categoryId      String     @map("category_id") @db.Uuid
+  unitId          String     @map("unit_id") @db.Uuid
+  name            String
+  genericName     String?    @map("generic_name")
+  brandName       String?    @map("brand_name")
+  strength        String?
+  dosageForm      DosageForm @map("dosage_form")
+  sku             String     @unique
+  barcode         String?    @unique
+  minimumStock    Int        @default(0) @map("minimum_stock")
+  reorderQuantity Int        @default(0) @map("reorder_quantity")
+  referenceValue  Decimal?   @map("reference_value") @db.Decimal(12, 4)
+  description     String?
+  isActive        Boolean    @default(true) @map("is_active")
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  category        MedicineCategory    @relation(fields: [categoryId], references: [id])
+  unit            Unit                @relation(fields: [unitId], references: [id])
+  batches         MedicineBatch[]
+  warehouseStock  WarehouseStock[]
+  pharmacyStock   PharmacyStock[]
+  receiptItems    StockReceiptItem[]
+  requestItems    SupplyRequestItem[]
+  transferItems   StockTransferItem[]
+  dispensingItems DispensingItem[]
+  stockMovements  StockMovement[]
+
+  @@index([categoryId])
+  @@index([unitId])
+  @@index([name])
+  @@index([genericName])
+  @@index([sku])
+  @@index([barcode])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("medicines")
+}
+
+model MedicineBatch {
+  id                String    @id @default(uuid()) @db.Uuid
+  medicineId        String    @map("medicine_id") @db.Uuid
+  batchNumber       String    @map("batch_number")
+  manufacturingDate DateTime? @map("manufacturing_date") @db.Date
+  expiryDate        DateTime  @map("expiry_date") @db.Date
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  medicine        Medicine            @relation(fields: [medicineId], references: [id])
+  warehouseStock  WarehouseStock[]
+  pharmacyStock   PharmacyStock[]
+  receiptItems    StockReceiptItem[]
+  transferItems   StockTransferItem[]
+  dispensingItems DispensingItem[]
+  stockMovements  StockMovement[]
+
+  @@unique([medicineId, batchNumber])
+  @@index([medicineId])
+  @@index([batchNumber])
+  @@index([expiryDate])
+  @@index([isActive])
+  @@map("medicine_batches")
+}
+
+model Warehouse {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  code           String    @unique
+  name           String
+  address        String?
+  location       String?
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  stock          WarehouseStock[]
+  receipts       StockReceipt[]
+  supplyRequests SupplyRequest[]
+  transfersOut   StockTransfer[]  @relation("TransferFromWarehouse")
+  stockMovements StockMovement[]
+  users          User[]           @relation("UserWarehouse")
+  invitations    Invitation[]
+  notifications  Notification[]
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@map("warehouses")
+}
+
+model Pharmacy {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  code           String    @unique
+  slug           String    @unique
+  name           String
+  address        String?
+  location       String?
+  phone          String?
+  email          String?
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  organization      Organization       @relation(fields: [organizationId], references: [id])
+  stock             PharmacyStock[]
+  supplyRequests    SupplyRequest[]
+  transfersIn       StockTransfer[]    @relation("TransferToPharmacy")
+  dispensingRecords DispensingRecord[]
+  stockMovements    StockMovement[]
+  users             User[]             @relation("UserPharmacy")
+  invitations       Invitation[]
+  notifications     Notification[]
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@map("pharmacies")
+}
+
+model WarehouseStock {
+  id          String   @id @default(uuid()) @db.Uuid
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  medicineId  String   @map("medicine_id") @db.Uuid
+  batchId     String   @map("batch_id") @db.Uuid
+  quantity    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  warehouse Warehouse     @relation(fields: [warehouseId], references: [id])
+  medicine  Medicine      @relation(fields: [medicineId], references: [id])
+  batch     MedicineBatch @relation(fields: [batchId], references: [id])
+
+  @@unique([warehouseId, medicineId, batchId])
+  @@unique([warehouseId, batchId])
+  @@index([warehouseId, medicineId])
+  @@index([medicineId])
+  @@index([batchId])
+  @@index([quantity])
+  @@map("warehouse_stock")
+}
+
+model PharmacyStock {
+  id         String   @id @default(uuid()) @db.Uuid
+  pharmacyId String   @map("pharmacy_id") @db.Uuid
+  medicineId String   @map("medicine_id") @db.Uuid
+  batchId    String   @map("batch_id") @db.Uuid
+  quantity   Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  pharmacy Pharmacy      @relation(fields: [pharmacyId], references: [id])
+  medicine Medicine      @relation(fields: [medicineId], references: [id])
+  batch    MedicineBatch @relation(fields: [batchId], references: [id])
+
+  @@unique([pharmacyId, medicineId, batchId])
+  @@unique([pharmacyId, batchId])
+  @@index([pharmacyId, medicineId, quantity])
+  @@index([pharmacyId, medicineId])
+  @@index([medicineId])
+  @@index([batchId])
+  @@index([quantity])
+  @@map("pharmacy_stock")
+}
+
+model StockReceipt {
+  id            String        @id @default(uuid()) @db.Uuid
+  receiptNumber String        @unique @map("receipt_number")
+  warehouseId   String        @map("warehouse_id") @db.Uuid
+  status        ReceiptStatus @default(DRAFT)
+  receivedAt    DateTime?     @map("received_at") @db.Timestamptz(6)
+  supplierName  String?       @map("supplier_name")
+  supplierRef   String?       @map("supplier_ref")
+  notes         String?
+  createdById   String        @map("created_by_id") @db.Uuid
+  postedById    String?       @map("posted_by_id") @db.Uuid
+  postedAt      DateTime?     @map("posted_at") @db.Timestamptz(6)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  warehouse Warehouse          @relation(fields: [warehouseId], references: [id])
+  createdBy User               @relation("ReceiptCreatedBy", fields: [createdById], references: [id])
+  postedBy  User?              @relation("ReceiptPostedBy", fields: [postedById], references: [id])
+  items     StockReceiptItem[]
+
+  @@index([warehouseId])
+  @@index([status])
+  @@index([receivedAt])
+  @@index([createdAt])
+  @@map("stock_receipts")
+}
+
+model StockReceiptItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  receiptId  String   @map("receipt_id") @db.Uuid
+  medicineId String   @map("medicine_id") @db.Uuid
+  batchId    String   @map("batch_id") @db.Uuid
+  quantity   Int
+  unitCost   Decimal? @map("unit_cost") @db.Decimal(12, 4)
+  notes      String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  receipt  StockReceipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  medicine Medicine      @relation(fields: [medicineId], references: [id])
+  batch    MedicineBatch @relation(fields: [batchId], references: [id])
+
+  @@index([receiptId])
+  @@index([medicineId])
+  @@index([batchId])
+  @@map("stock_receipt_items")
+}
+
+model SupplyRequest {
+  id              String              @id @default(uuid()) @db.Uuid
+  requestNumber   String              @unique @map("request_number")
+  pharmacyId      String              @map("pharmacy_id") @db.Uuid
+  warehouseId     String              @map("warehouse_id") @db.Uuid
+  status          SupplyRequestStatus @default(DRAFT)
+  notes           String?
+  rejectionReason String?             @map("rejection_reason")
+  createdById     String              @map("created_by_id") @db.Uuid
+  reviewedById    String?             @map("reviewed_by_id") @db.Uuid
+  reviewedAt      DateTime?           @map("reviewed_at") @db.Timestamptz(6)
+  submittedAt     DateTime?           @map("submitted_at") @db.Timestamptz(6)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  pharmacy   Pharmacy            @relation(fields: [pharmacyId], references: [id])
+  warehouse  Warehouse           @relation(fields: [warehouseId], references: [id])
+  createdBy  User                @relation("RequestCreatedBy", fields: [createdById], references: [id])
+  reviewedBy User?               @relation("RequestReviewedBy", fields: [reviewedById], references: [id])
+  items      SupplyRequestItem[]
+  transfers  StockTransfer[]
+
+  @@index([pharmacyId])
+  @@index([warehouseId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("supply_requests")
+}
+
+model SupplyRequestItem {
+  id           String   @id @default(uuid()) @db.Uuid
+  requestId    String   @map("request_id") @db.Uuid
+  medicineId   String   @map("medicine_id") @db.Uuid
+  requestedQty Int      @map("requested_qty")
+  approvedQty  Int?     @map("approved_qty")
+  fulfilledQty Int      @default(0) @map("fulfilled_qty")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  request  SupplyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  medicine Medicine      @relation(fields: [medicineId], references: [id])
+
+  @@index([requestId])
+  @@index([medicineId])
+  @@map("supply_request_items")
+}
+
+model StockTransfer {
+  id              String         @id @default(uuid()) @db.Uuid
+  transferNumber  String         @unique @map("transfer_number")
+  warehouseId     String         @map("warehouse_id") @db.Uuid
+  pharmacyId      String         @map("pharmacy_id") @db.Uuid
+  supplyRequestId String?        @map("supply_request_id") @db.Uuid
+  status          TransferStatus @default(DRAFT)
+  notes           String?
+  createdById     String         @map("created_by_id") @db.Uuid
+  preparedById    String?        @map("prepared_by_id") @db.Uuid
+  shippedById     String?        @map("shipped_by_id") @db.Uuid
+  receivedById    String?        @map("received_by_id") @db.Uuid
+  preparedAt      DateTime?      @map("prepared_at") @db.Timestamptz(6)
+  dispatchedAt    DateTime?      @map("dispatched_at") @db.Timestamptz(6)
+  receivedAt      DateTime?      @map("received_at") @db.Timestamptz(6)
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  warehouse     Warehouse           @relation("TransferFromWarehouse", fields: [warehouseId], references: [id])
+  pharmacy      Pharmacy            @relation("TransferToPharmacy", fields: [pharmacyId], references: [id])
+  supplyRequest SupplyRequest?      @relation(fields: [supplyRequestId], references: [id])
+  createdBy     User                @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  preparedBy    User?               @relation("TransferPreparedBy", fields: [preparedById], references: [id])
+  shippedBy     User?               @relation("TransferShippedBy", fields: [shippedById], references: [id])
+  receivedBy    User?               @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  items         StockTransferItem[]
+
+  @@index([warehouseId])
+  @@index([pharmacyId])
+  @@index([supplyRequestId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  transferId  String   @map("transfer_id") @db.Uuid
+  medicineId  String   @map("medicine_id") @db.Uuid
+  batchId     String   @map("batch_id") @db.Uuid
+  quantity    Int
+  receivedQty Int      @default(0) @map("received_qty")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  medicine Medicine      @relation(fields: [medicineId], references: [id])
+  batch    MedicineBatch @relation(fields: [batchId], references: [id])
+
+  @@index([transferId])
+  @@index([medicineId])
+  @@index([batchId])
+  @@map("stock_transfer_items")
+}
+
+model Beneficiary {
+  id                String    @id @default(uuid()) @db.Uuid
+  beneficiaryNumber String    @unique @map("beneficiary_number")
+  name              String?
+  gender            Gender    @default(UNSPECIFIED)
+  dateOfBirth       DateTime? @map("date_of_birth") @db.Date
+  phone             String?
+  externalReference String?   @unique @map("external_reference")
+  address           String?
+  notes             String?
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  dispensingRecords DispensingRecord[]
+
+  @@index([beneficiaryNumber])
+  @@index([name])
+  @@index([phone])
+  @@index([externalReference])
+  @@index([isActive])
+  @@map("beneficiaries")
+}
+
+model DispensingRecord {
+  id             String           @id @default(uuid()) @db.Uuid
+  recordNumber   String           @unique @map("record_number")
+  pharmacyId     String           @map("pharmacy_id") @db.Uuid
+  beneficiaryId  String           @map("beneficiary_id") @db.Uuid
+  status         DispensingStatus @default(COMPLETED)
+  notes          String?
+  idempotencyKey String?          @map("idempotency_key")
+  dispensedById  String           @map("dispensed_by_id") @db.Uuid
+  dispensedAt    DateTime         @default(now()) @map("dispensed_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  pharmacy    Pharmacy         @relation(fields: [pharmacyId], references: [id])
+  beneficiary Beneficiary      @relation(fields: [beneficiaryId], references: [id])
+  dispensedBy User             @relation(fields: [dispensedById], references: [id])
+  items       DispensingItem[]
+
+  @@unique([pharmacyId, idempotencyKey])
+  @@index([pharmacyId])
+  @@index([beneficiaryId])
+  @@index([dispensedAt])
+  @@index([status])
+  @@index([recordNumber])
+  @@map("dispensing_records")
+}
+
+model DispensingItem {
+  id             String   @id @default(uuid()) @db.Uuid
+  recordId       String   @map("record_id") @db.Uuid
+  medicineId     String   @map("medicine_id") @db.Uuid
+  batchId        String   @map("batch_id") @db.Uuid
+  quantity       Int
+  referenceValue Decimal? @map("reference_value") @db.Decimal(12, 4)
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  record   DispensingRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  medicine Medicine         @relation(fields: [medicineId], references: [id])
+  batch    MedicineBatch    @relation(fields: [batchId], references: [id])
+
+  @@index([recordId])
+  @@index([medicineId])
+  @@index([batchId])
+  @@map("dispensing_items")
+}
+
+/// Immutable inventory history. Application code must never update or delete rows.
+model StockMovement {
+  id            String                 @id @default(uuid()) @db.Uuid
+  movementType  MovementType           @map("movement_type")
+  locationType  LocationType           @map("location_type")
+  warehouseId   String?                @map("warehouse_id") @db.Uuid
+  pharmacyId    String?                @map("pharmacy_id") @db.Uuid
+  medicineId    String                 @map("medicine_id") @db.Uuid
+  batchId       String                 @map("batch_id") @db.Uuid
+  quantity      Int
+  balanceAfter  Int                    @map("balance_after")
+  referenceType MovementReferenceType? @map("reference_type")
+  referenceId   String?                @map("reference_id") @db.Uuid
+  reason        String?
+  performedById String?                @map("performed_by_id") @db.Uuid
+  occurredAt    DateTime               @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  warehouse   Warehouse?    @relation(fields: [warehouseId], references: [id])
+  pharmacy    Pharmacy?     @relation(fields: [pharmacyId], references: [id])
+  medicine    Medicine      @relation(fields: [medicineId], references: [id])
+  batch       MedicineBatch @relation(fields: [batchId], references: [id])
+  performedBy User?         @relation("MovementPerformedBy", fields: [performedById], references: [id])
+
+  @@index([locationType, warehouseId, pharmacyId])
+  @@index([medicineId, batchId])
+  @@index([movementType])
+  @@index([occurredAt])
+  @@index([referenceType, referenceId])
+  @@map("stock_movements")
+}
+
+model Notification {
+  id           String               @id @default(uuid()) @db.Uuid
+  userId       String               @map("user_id") @db.Uuid
+  type         NotificationType
+  title        String
+  message      String
+  severity     NotificationSeverity @default(INFO)
+  status       NotificationStatus   @default(UNREAD)
+  entityType   String?              @map("entity_type")
+  entityId     String?              @map("entity_id") @db.Uuid
+  locationType LocationType?        @map("location_type")
+  warehouseId  String?              @map("warehouse_id") @db.Uuid
+  pharmacyId   String?              @map("pharmacy_id") @db.Uuid
+  dedupeKey    String?              @map("dedupe_key")
+  href         String?
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  readAt       DateTime?            @map("read_at") @db.Timestamptz(6)
+  resolvedAt   DateTime?            @map("resolved_at") @db.Timestamptz(6)
+  expiresAt    DateTime?            @map("expires_at") @db.Timestamptz(6)
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+  pharmacy  Pharmacy?  @relation(fields: [pharmacyId], references: [id])
+  emailLog  EmailLog?
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@index([userId, status])
+  @@index([type])
+  @@index([dedupeKey])
+  @@index([pharmacyId])
+  @@index([warehouseId])
+  @@index([resolvedAt])
+  @@map("notifications")
+}
+
+/// Immutable audit trail. Application code must never update or delete rows.
+model AuditLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  userId     String?     @map("user_id") @db.Uuid
+  action     AuditAction
+  entityType String      @map("entity_type")
+  entityId   String?     @map("entity_id")
+  oldValues  Json?       @map("old_values")
+  newValues  Json?       @map("new_values")
+  ipAddress  String?     @map("ip_address")
+  userAgent  String?     @map("user_agent")
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model AppSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_settings")
+}
+
+enum EmailLogStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model EmailLog {
+  id             String         @id @default(uuid()) @db.Uuid
+  messageId      String?        @map("message_id")
+  type           String
+  recipient      String
+  subject        String
+  status         EmailLogStatus @default(QUEUED)
+  provider       String         @default("RESEND")
+  notificationId String?        @unique @map("notification_id") @db.Uuid
+  userId         String?        @map("user_id") @db.Uuid
+  sentAt         DateTime?      @map("sent_at") @db.Timestamptz(6)
+  failedAt       DateTime?      @map("failed_at") @db.Timestamptz(6)
+  errorCode      String?        @map("error_code")
+  errorMessage   String?        @map("error_message")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  notification Notification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([type])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("email_logs")
+}
+
+enum PreferredLanguage {
+  EN
+  AR
+}
+
+model NotificationPreference {
+  id                String            @id @default(uuid()) @db.Uuid
+  userId            String            @unique @map("user_id") @db.Uuid
+  emailEnabled      Boolean           @default(true) @map("email_enabled")
+  inAppEnabled      Boolean           @default(true) @map("in_app_enabled")
+  preferredLanguage PreferredLanguage @default(EN) @map("preferred_language")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}

@@ -1,0 +1,317 @@
+export const PERMISSIONS = {
+  MEDICINES_CREATE: 'medicines:create',
+  MEDICINES_READ: 'medicines:read',
+  MEDICINES_UPDATE: 'medicines:update',
+  MEDICINES_DELETE: 'medicines:delete',
+
+  CATEGORIES_CREATE: 'categories:create',
+  CATEGORIES_READ: 'categories:read',
+  CATEGORIES_UPDATE: 'categories:update',
+  CATEGORIES_DELETE: 'categories:delete',
+
+  BATCHES_CREATE: 'batches:create',
+  BATCHES_READ: 'batches:read',
+  BATCHES_UPDATE: 'batches:update',
+
+  UNITS_CREATE: 'units:create',
+  UNITS_READ: 'units:read',
+  UNITS_UPDATE: 'units:update',
+  UNITS_DELETE: 'units:delete',
+
+  WAREHOUSE_STOCK_READ: 'warehouse-stock:read',
+  RECEIPTS_CREATE: 'receipts:create',
+  RECEIPTS_READ: 'receipts:read',
+  RECEIPTS_POST: 'receipts:post',
+
+  SUPPLY_REQUESTS_CREATE: 'supply-requests:create',
+  SUPPLY_REQUESTS_READ: 'supply-requests:read',
+  SUPPLY_REQUESTS_SUBMIT: 'supply-requests:submit',
+  SUPPLY_REQUESTS_CANCEL: 'supply-requests:cancel',
+  SUPPLY_REQUESTS_REVIEW: 'supply-requests:review',
+  SUPPLY_REQUESTS_APPROVE: 'supply-requests:approve',
+  SUPPLY_REQUESTS_REJECT: 'supply-requests:reject',
+
+  TRANSFERS_CREATE: 'transfers:create',
+  TRANSFERS_READ: 'transfers:read',
+  TRANSFERS_PREPARE: 'transfers:prepare',
+  TRANSFERS_DISPATCH: 'transfers:dispatch',
+  TRANSFERS_RECEIVE: 'transfers:receive',
+
+  PHARMACY_STOCK_READ: 'pharmacy-stock:read',
+  DISPENSING_CREATE: 'dispensing:create',
+  DISPENSING_READ: 'dispensing:read',
+
+  BENEFICIARIES_CREATE: 'beneficiaries:create',
+  BENEFICIARIES_READ: 'beneficiaries:read',
+  BENEFICIARIES_UPDATE: 'beneficiaries:update',
+
+  STOCK_MOVEMENTS_READ: 'stock-movements:read',
+  STOCK_ADJUST: 'stock:adjust',
+  STOCK_MARK_DAMAGED: 'stock:mark-damaged',
+  STOCK_MARK_EXPIRED: 'stock:mark-expired',
+
+  REPORTS_WAREHOUSE: 'reports:warehouse',
+  REPORTS_PHARMACY: 'reports:pharmacy',
+  REPORTS_DISPENSING: 'reports:dispensing',
+  REPORTS_EXPORT: 'reports:export',
+
+  PHARMACIES_CREATE: 'pharmacies:create',
+  PHARMACIES_READ: 'pharmacies:read',
+  PHARMACIES_UPDATE: 'pharmacies:update',
+  WAREHOUSES_CREATE: 'warehouses:create',
+  WAREHOUSES_READ: 'warehouses:read',
+  WAREHOUSES_UPDATE: 'warehouses:update',
+
+  INVITATIONS_CREATE: 'invitations:create',
+  INVITATIONS_READ: 'invitations:read',
+  INVITATIONS_REVOKE: 'invitations:revoke',
+
+  DASHBOARD_ADMIN: 'dashboard:admin',
+  DASHBOARD_WAREHOUSE: 'dashboard:warehouse',
+  DASHBOARD_PHARMACY: 'dashboard:pharmacy',
+
+  USERS_CREATE: 'users:create',
+  USERS_READ: 'users:read',
+  USERS_UPDATE: 'users:update',
+  USERS_DELETE: 'users:delete',
+
+  ROLES_READ: 'roles:read',
+  ROLES_UPDATE: 'roles:update',
+
+  SETTINGS_READ: 'settings:read',
+  SETTINGS_UPDATE: 'settings:update',
+
+  AUDIT_LOGS_READ: 'audit-logs:read',
+  NOTIFICATIONS_READ: 'notifications:read',
+
+  DASHBOARD_VIEW: 'dashboard:view',
+  ORGANIZATION_VIEW: 'organization:view',
+  ORGANIZATION_MANAGE: 'organization:manage',
+
+  PHARMACY_VIEW: 'pharmacy:view',
+  PHARMACY_CREATE: 'pharmacy:create',
+  PHARMACY_UPDATE: 'pharmacy:update',
+  PHARMACY_ACTIVATE: 'pharmacy:activate',
+  PHARMACY_DEACTIVATE: 'pharmacy:deactivate',
+
+  WAREHOUSE_VIEW: 'warehouse:view',
+  WAREHOUSE_MANAGE: 'warehouse:manage',
+
+  MEDICINE_VIEW: 'medicine:view',
+  MEDICINE_CREATE: 'medicine:create',
+  MEDICINE_UPDATE: 'medicine:update',
+  MEDICINE_ARCHIVE: 'medicine:archive',
+
+  CATEGORY_VIEW: 'category:view',
+  CATEGORY_CREATE: 'category:create',
+  CATEGORY_UPDATE: 'category:update',
+  CATEGORY_MANAGE: 'category:manage',
+
+  UNIT_VIEW: 'unit:view',
+  UNIT_CREATE: 'unit:create',
+  UNIT_UPDATE: 'unit:update',
+  UNIT_MANAGE: 'unit:manage',
+
+  BATCH_VIEW: 'batch:view',
+  BATCH_CREATE: 'batch:create',
+  BATCH_UPDATE: 'batch:update',
+  BATCH_MANAGE: 'batch:manage',
+
+  WAREHOUSE_STOCK_VIEW: 'warehouse-stock:view',
+  WAREHOUSE_STOCK_MANAGE: 'warehouse-stock:manage',
+  WAREHOUSE_STOCK_ADJUST: 'warehouse-stock:adjust',
+
+  STOCK_MOVEMENT_VIEW: 'stock-movement:view',
+  STOCK_DAMAGE: 'stock:damage',
+  STOCK_EXPIRE: 'stock:expire',
+
+  PHARMACY_STOCK_VIEW: 'pharmacy-stock:view',
+  PHARMACY_STOCK_MANAGE: 'pharmacy-stock:manage',
+
+  RECEIPT_VIEW: 'receipt:view',
+  RECEIPT_CREATE: 'receipt:create',
+  RECEIPT_POST: 'receipt:post',
+  RECEIPT_CANCEL: 'receipt:cancel',
+
+  SUPPLY_REQUEST_VIEW: 'supply-request:view',
+  SUPPLY_REQUEST_CREATE: 'supply-request:create',
+  SUPPLY_REQUEST_EDIT: 'supply-request:edit',
+  SUPPLY_REQUEST_SUBMIT: 'supply-request:submit',
+  SUPPLY_REQUEST_APPROVE: 'supply-request:approve',
+  SUPPLY_REQUEST_REJECT: 'supply-request:reject',
+  SUPPLY_REQUEST_CANCEL: 'supply-request:cancel',
+  SUPPLY_REQUEST_FULFILL: 'supply-request:fulfill',
+
+  TRANSFER_VIEW: 'transfer:view',
+  TRANSFER_CREATE: 'transfer:create',
+  TRANSFER_EDIT: 'transfer:edit',
+  TRANSFER_PREPARE: 'transfer:prepare',
+  TRANSFER_SHIP: 'transfer:ship',
+  TRANSFER_RECEIVE: 'transfer:receive',
+  TRANSFER_CANCEL: 'transfer:cancel',
+
+  DISPENSING_VIEW: 'dispensing:view',
+  DISPENSING_CANCEL: 'dispensing:cancel',
+  DISPENSING_HISTORY_VIEW: 'dispensing:history-view',
+
+  BENEFICIARY_VIEW: 'beneficiary:view',
+  BENEFICIARY_CREATE: 'beneficiary:create',
+  BENEFICIARY_UPDATE: 'beneficiary:update',
+  BENEFICIARY_EDIT: 'beneficiary:edit',
+  BENEFICIARY_ACTIVATE: 'beneficiary:activate',
+  BENEFICIARY_DEACTIVATE: 'beneficiary:deactivate',
+
+  REPORT_VIEW: 'report:view',
+  REPORT_EXPORT: 'report:export',
+
+  NOTIFICATION_VIEW: 'notification:view',
+  NOTIFICATION_MANAGE: 'notification:manage',
+
+  USER_VIEW: 'user:view',
+  USER_CREATE: 'user:create',
+  USER_UPDATE: 'user:update',
+  USER_DEACTIVATE: 'user:deactivate',
+  USER_INVITE: 'user:invite',
+
+  ROLE_VIEW: 'role:view',
+  ROLE_MANAGE: 'role:manage',
+
+  AUDIT_LOG_VIEW: 'audit-log:view',
+
+  SETTINGS_VIEW: 'settings:view',
+  SETTINGS_MANAGE: 'settings:manage',
+} as const;
+
+export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+export const ALL_PERMISSION_CODES: PermissionCode[] = Object.values(PERMISSIONS);
+
+const ALIAS_PAIRS: ReadonlyArray<readonly [PermissionCode, PermissionCode]> = [
+  [PERMISSIONS.DASHBOARD_VIEW, PERMISSIONS.DASHBOARD_ADMIN],
+  [PERMISSIONS.DASHBOARD_VIEW, PERMISSIONS.DASHBOARD_WAREHOUSE],
+  [PERMISSIONS.DASHBOARD_VIEW, PERMISSIONS.DASHBOARD_PHARMACY],
+  [PERMISSIONS.ORGANIZATION_VIEW, PERMISSIONS.WAREHOUSES_READ],
+  [PERMISSIONS.PHARMACY_VIEW, PERMISSIONS.PHARMACIES_READ],
+  [PERMISSIONS.PHARMACY_CREATE, PERMISSIONS.PHARMACIES_CREATE],
+  [PERMISSIONS.PHARMACY_UPDATE, PERMISSIONS.PHARMACIES_UPDATE],
+  [PERMISSIONS.PHARMACY_ACTIVATE, PERMISSIONS.PHARMACIES_UPDATE],
+  [PERMISSIONS.PHARMACY_DEACTIVATE, PERMISSIONS.PHARMACIES_UPDATE],
+  [PERMISSIONS.WAREHOUSE_VIEW, PERMISSIONS.WAREHOUSES_READ],
+  [PERMISSIONS.WAREHOUSE_MANAGE, PERMISSIONS.WAREHOUSES_CREATE],
+  [PERMISSIONS.WAREHOUSE_MANAGE, PERMISSIONS.WAREHOUSES_UPDATE],
+  [PERMISSIONS.MEDICINE_VIEW, PERMISSIONS.MEDICINES_READ],
+  [PERMISSIONS.MEDICINE_CREATE, PERMISSIONS.MEDICINES_CREATE],
+  [PERMISSIONS.MEDICINE_UPDATE, PERMISSIONS.MEDICINES_UPDATE],
+  [PERMISSIONS.MEDICINE_ARCHIVE, PERMISSIONS.MEDICINES_DELETE],
+  [PERMISSIONS.CATEGORY_VIEW, PERMISSIONS.CATEGORIES_READ],
+  [PERMISSIONS.CATEGORY_CREATE, PERMISSIONS.CATEGORIES_CREATE],
+  [PERMISSIONS.CATEGORY_UPDATE, PERMISSIONS.CATEGORIES_UPDATE],
+  [PERMISSIONS.CATEGORY_MANAGE, PERMISSIONS.CATEGORIES_CREATE],
+  [PERMISSIONS.CATEGORY_MANAGE, PERMISSIONS.CATEGORIES_UPDATE],
+  [PERMISSIONS.UNIT_VIEW, PERMISSIONS.UNITS_READ],
+  [PERMISSIONS.UNIT_CREATE, PERMISSIONS.UNITS_CREATE],
+  [PERMISSIONS.UNIT_UPDATE, PERMISSIONS.UNITS_UPDATE],
+  [PERMISSIONS.UNIT_MANAGE, PERMISSIONS.UNITS_UPDATE],
+  [PERMISSIONS.BATCH_VIEW, PERMISSIONS.BATCHES_READ],
+  [PERMISSIONS.BATCH_CREATE, PERMISSIONS.BATCHES_CREATE],
+  [PERMISSIONS.BATCH_UPDATE, PERMISSIONS.BATCHES_UPDATE],
+  [PERMISSIONS.BATCH_MANAGE, PERMISSIONS.BATCHES_CREATE],
+  [PERMISSIONS.BATCH_MANAGE, PERMISSIONS.BATCHES_UPDATE],
+  [PERMISSIONS.WAREHOUSE_STOCK_VIEW, PERMISSIONS.WAREHOUSE_STOCK_READ],
+  [PERMISSIONS.WAREHOUSE_STOCK_ADJUST, PERMISSIONS.WAREHOUSE_STOCK_MANAGE],
+  [PERMISSIONS.STOCK_MOVEMENT_VIEW, PERMISSIONS.STOCK_MOVEMENTS_READ],
+  [PERMISSIONS.PHARMACY_STOCK_VIEW, PERMISSIONS.PHARMACY_STOCK_READ],
+  [PERMISSIONS.RECEIPT_VIEW, PERMISSIONS.RECEIPTS_READ],
+  [PERMISSIONS.RECEIPT_CREATE, PERMISSIONS.RECEIPTS_CREATE],
+  [PERMISSIONS.RECEIPT_POST, PERMISSIONS.RECEIPTS_POST],
+  // RECEIPT_CANCEL is intentionally not aliased to RECEIPTS_CREATE —
+  // cancel requires explicit RECEIPT_CANCEL on the role.
+  [PERMISSIONS.SUPPLY_REQUEST_VIEW, PERMISSIONS.SUPPLY_REQUESTS_READ],
+  [PERMISSIONS.SUPPLY_REQUEST_CREATE, PERMISSIONS.SUPPLY_REQUESTS_CREATE],
+  [PERMISSIONS.SUPPLY_REQUEST_EDIT, PERMISSIONS.SUPPLY_REQUESTS_CREATE],
+  [PERMISSIONS.SUPPLY_REQUEST_SUBMIT, PERMISSIONS.SUPPLY_REQUESTS_SUBMIT],
+  [PERMISSIONS.SUPPLY_REQUEST_APPROVE, PERMISSIONS.SUPPLY_REQUESTS_APPROVE],
+  [PERMISSIONS.SUPPLY_REQUEST_REJECT, PERMISSIONS.SUPPLY_REQUESTS_REJECT],
+  [PERMISSIONS.SUPPLY_REQUEST_CANCEL, PERMISSIONS.SUPPLY_REQUESTS_CANCEL],
+  [PERMISSIONS.TRANSFER_VIEW, PERMISSIONS.TRANSFERS_READ],
+  [PERMISSIONS.TRANSFER_CREATE, PERMISSIONS.TRANSFERS_CREATE],
+  [PERMISSIONS.TRANSFER_EDIT, PERMISSIONS.TRANSFERS_CREATE],
+  [PERMISSIONS.TRANSFER_PREPARE, PERMISSIONS.TRANSFERS_PREPARE],
+  [PERMISSIONS.TRANSFER_SHIP, PERMISSIONS.TRANSFERS_DISPATCH],
+  [PERMISSIONS.TRANSFER_RECEIVE, PERMISSIONS.TRANSFERS_RECEIVE],
+  [PERMISSIONS.TRANSFER_CANCEL, PERMISSIONS.TRANSFERS_CREATE],
+  [PERMISSIONS.DISPENSING_VIEW, PERMISSIONS.DISPENSING_READ],
+  [PERMISSIONS.DISPENSING_HISTORY_VIEW, PERMISSIONS.DISPENSING_READ],
+  [PERMISSIONS.DISPENSING_HISTORY_VIEW, PERMISSIONS.DISPENSING_VIEW],
+  [PERMISSIONS.BENEFICIARY_VIEW, PERMISSIONS.BENEFICIARIES_READ],
+  [PERMISSIONS.BENEFICIARY_CREATE, PERMISSIONS.BENEFICIARIES_CREATE],
+  [PERMISSIONS.BENEFICIARY_UPDATE, PERMISSIONS.BENEFICIARIES_UPDATE],
+  [PERMISSIONS.BENEFICIARY_EDIT, PERMISSIONS.BENEFICIARY_UPDATE],
+  [PERMISSIONS.BENEFICIARY_EDIT, PERMISSIONS.BENEFICIARIES_UPDATE],
+  // ACTIVATE/DEACTIVATE stay explicit (manager-only) — do not alias to UPDATE.
+  [PERMISSIONS.REPORT_VIEW, PERMISSIONS.REPORTS_WAREHOUSE],
+  [PERMISSIONS.REPORT_VIEW, PERMISSIONS.REPORTS_PHARMACY],
+  [PERMISSIONS.REPORT_VIEW, PERMISSIONS.REPORTS_DISPENSING],
+  [PERMISSIONS.REPORT_EXPORT, PERMISSIONS.REPORTS_EXPORT],
+  [PERMISSIONS.NOTIFICATION_VIEW, PERMISSIONS.NOTIFICATIONS_READ],
+  [PERMISSIONS.USER_VIEW, PERMISSIONS.USERS_READ],
+  [PERMISSIONS.USER_CREATE, PERMISSIONS.USERS_CREATE],
+  [PERMISSIONS.USER_UPDATE, PERMISSIONS.USERS_UPDATE],
+  [PERMISSIONS.USER_DEACTIVATE, PERMISSIONS.USERS_DELETE],
+  [PERMISSIONS.USER_DEACTIVATE, PERMISSIONS.USERS_UPDATE],
+  [PERMISSIONS.USER_INVITE, PERMISSIONS.INVITATIONS_CREATE],
+  [PERMISSIONS.ROLE_VIEW, PERMISSIONS.ROLES_READ],
+  [PERMISSIONS.ROLE_MANAGE, PERMISSIONS.ROLES_UPDATE],
+  [PERMISSIONS.AUDIT_LOG_VIEW, PERMISSIONS.AUDIT_LOGS_READ],
+  [PERMISSIONS.SETTINGS_VIEW, PERMISSIONS.SETTINGS_READ],
+  [PERMISSIONS.SETTINGS_MANAGE, PERMISSIONS.SETTINGS_UPDATE],
+];
+
+const EQUIVALENTS = new Map<string, Set<string>>();
+for (const [left, right] of ALIAS_PAIRS) {
+  if (!EQUIVALENTS.has(left)) EQUIVALENTS.set(left, new Set());
+  if (!EQUIVALENTS.has(right)) EQUIVALENTS.set(right, new Set());
+  EQUIVALENTS.get(left)!.add(right);
+  EQUIVALENTS.get(right)!.add(left);
+}
+
+export function hasPermission(
+  granted: readonly string[] | undefined,
+  required: string,
+): boolean {
+  if (!granted?.length) {
+    return false;
+  }
+  if (granted.includes(required)) {
+    return true;
+  }
+  const equivalents = EQUIVALENTS.get(required);
+  if (!equivalents) {
+    return false;
+  }
+  return granted.some((code) => equivalents.has(code));
+}
+
+export function hasAnyPermission(
+  granted: readonly string[] | undefined,
+  required: readonly string[],
+): boolean {
+  return required.some((permission) => hasPermission(granted, permission));
+}
+
+export const PERMISSION_DEFINITIONS: ReadonlyArray<{
+  code: PermissionCode;
+  name: string;
+  resource: string;
+  action: string;
+  description: string;
+}> = ALL_PERMISSION_CODES.map((code) => {
+  const [resource, action] = code.split(':') as [string, string];
+  return {
+    code,
+    name: `${resource} ${action}`,
+    resource,
+    action,
+    description: `Allows ${action} on ${resource}`,
+  };
+});

@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Page canvas — soft blue/gray */
+    --background: 204 43% 97%;
+    --foreground: 207 61% 18%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 207 61% 18%;
+
+    /* Muslim Hands teal */
+    --primary: 193 100% 35%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 204 35% 94%;
+    --secondary-foreground: 207 61% 18%;
+
+    --muted: 204 30% 93%;
+    --muted-foreground: 215 16% 40%;
+
+    --accent: 191 67% 95%;
+    --accent-foreground: 194 100% 28%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 20% 90%;
+    --input: 214 20% 90%;
+    --ring: 193 100% 35%;
+
+    --radius: 0.75rem;
+
+    /* Shell-specific */
+    --sidebar: 193 100% 32%;
+    --sidebar-deep: 194 100% 28%;
+    --sidebar-bright: 193 79% 45%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-muted: 190 40% 85%;
+    --sidebar-hover: 0 0% 100% / 0.1;
+    --sidebar-active: 0 0% 100% / 0.18;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    @apply h-full bg-background text-foreground antialiased;
+  }
+
+  input,
+  textarea,
+  select,
+  table {
+    unicode-bidi: plaintext;
+  }
+
+  /* Technical identifiers stay LTR even in Arabic UI */
+  input[type='email'],
+  input[type='tel'],
+  input[type='password'],
+  input[type='number'],
+  input[inputmode='numeric'],
+  .dir-ltr {
+    direction: ltr;
+    text-align: start;
+    unicode-bidi: isolate;
+  }
+}
+
+@layer utilities {
+  /* Main content scrollbar — sits on the right, away from the teal sidebar */
+  .app-main {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(214 16% 72%) transparent;
+  }
+
+  .app-main::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .app-main::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .app-main::-webkit-scrollbar-thumb {
+    background-color: hsl(214 16% 72% / 0.7);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .app-main::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(214 16% 58% / 0.9);
+  }
+
+  .app-main::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Sidebar nav scrollbar — blend into teal so no white strip against the blue */
+  .app-sidebar,
+  .app-sidebar * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.35) transparent;
+  }
+
+  .app-sidebar::-webkit-scrollbar,
+  .app-sidebar *::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .app-sidebar::-webkit-scrollbar-track,
+  .app-sidebar *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .app-sidebar::-webkit-scrollbar-thumb,
+  .app-sidebar *::-webkit-scrollbar-thumb {
+    background-color: rgb(255 255 255 / 0.28);
+    border-radius: 999px;
+  }
+
+  .app-sidebar::-webkit-scrollbar-thumb:hover,
+  .app-sidebar *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(255 255 255 / 0.45);
+  }
+
+  .app-sidebar::-webkit-scrollbar-button,
+  .app-sidebar *::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
