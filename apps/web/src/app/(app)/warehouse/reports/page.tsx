@@ -11,7 +11,6 @@ const LINKS = [
   { href: '/reports/supply-requests', labelKey: 'reports.links.supplyRequests' },
   { href: '/reports/expiry', labelKey: 'reports.links.expiry' },
   { href: '/reports/low-stock', labelKey: 'reports.links.lowStock' },
-  { href: '/reports', labelKey: 'reports.allOverview' },
 ] as const;
 
 export default function WarehouseReportsPage() {

@@ -11,6 +11,7 @@ import { useI18n } from '@/i18n';
 import { apiDownload, apiList } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { hasPermission } from '@/lib/permissions';
+import { reportsHomePath } from '@/lib/reports-home';
 
 export interface ReportColumn {
   key: string;
@@ -62,7 +63,7 @@ export function ReportPage({
   exportType,
   columns,
   filters = [],
-  backHref = '/reports',
+  backHref,
 }: {
   title: string;
   description: string;
@@ -74,6 +75,7 @@ export function ReportPage({
 }) {
   const { user } = useAuth();
   const { t } = useI18n();
+  const resolvedBackHref = backHref ?? reportsHomePath(user);
   const canExport = hasPermission(user, 'report:export') || hasPermission(user, 'reports:export');
   const emDash = t('common.emDash');
   const supportsScope = hasDateRangeFilters(filters);
@@ -168,7 +170,7 @@ export function ReportPage({
           <p className="text-sm text-muted-foreground">{description}</p>
         </div>
         <Button asChild variant="outline">
-          <Link href={backHref}>{t('common.back')}</Link>
+          <Link href={resolvedBackHref}>{t('common.back')}</Link>
         </Button>
       </div>
 

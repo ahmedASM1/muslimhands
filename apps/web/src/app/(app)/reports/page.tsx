@@ -1,14 +1,16 @@
 ﻿'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/i18n';
 import { apiRequest } from '@/lib/api';
 import { hasPermission, useAuth } from '@/lib/auth-context';
+import { reportsHomePath } from '@/lib/reports-home';
 
 interface Overview {
   currentStock: Record<string, number>;
@@ -28,17 +30,45 @@ const LINKS = [
   { href: '/reports/low-stock', labelKey: 'reports.links.lowStock', permission: 'report:view' },
 ] as const;
 
-function metricTitle(key: string) {
-  return key.replace(/([A-Z])/g, ' $1');
+const METRIC_KEYS: Record<string, string> = {
+  expiredStockCount: 'reports.metrics.expiredStockCount',
+  expiringSoonStockCount: 'reports.metrics.expiringSoonStockCount',
+  lowStockMedicineCount: 'reports.metrics.lowStockMedicineCount',
+  pharmacyStockUnits: 'reports.metrics.pharmacyStockUnits',
+  warehouseStockUnits: 'reports.metrics.warehouseStockUnits',
+  activeMedicines: 'reports.metrics.activeMedicines',
+  shippedAwaitingReceipt: 'reports.metrics.shippedAwaitingReceipt',
+  activeTransfers: 'reports.metrics.activeTransfers',
+  pendingSupplyRequests: 'reports.metrics.pendingSupplyRequests',
+  uniqueBeneficiaries: 'reports.metrics.uniqueBeneficiaries',
+  dispensingCount: 'reports.metrics.dispensingCount',
+};
+
+function metricTitle(key: string, t: (k: string) => string) {
+  const i18nKey = METRIC_KEYS[key];
+  if (i18nKey) {
+    const label = t(i18nKey);
+    if (label !== i18nKey) return label;
+  }
+  return key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
 }
 
 export default function ReportsHubPage() {
   const { t } = useI18n();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const router = useRouter();
   const [period, setPeriod] = useState('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [customMode, setCustomMode] = useState(false);
+
+  useEffect(() => {
+    if (loading || !user) return;
+    const home = reportsHomePath(user);
+    if (home !== '/reports') {
+      router.replace(home);
+    }
+  }, [loading, user, router]);
 
   const params = new URLSearchParams();
   if (customMode && dateFrom && dateTo) {
@@ -48,14 +78,29 @@ export default function ReportsHubPage() {
     params.set('period', period);
   }
 
+  const scopedAway = Boolean(user && reportsHomePath(user) !== '/reports');
+
   const overview = useQuery({
     queryKey: ['reports-overview', params.toString()],
+    enabled: !loading && !scopedAway,
     queryFn: () => apiRequest<Overview>(`/reports/overview?${params.toString()}`),
   });
 
   const visibleLinks = LINKS.filter(
     (link) => !link.permission || hasPermission(user, link.permission),
   );
+
+  if (loading || scopedAway) {
+    return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>;
+  }
+
+  const periodLabel = String(overview.data?.periodActivity?.periodLabel ?? period);
+  const periodLabelText =
+    periodLabel.toUpperCase() === 'ALL'
+      ? t('reports.scopeAll')
+      : periodLabel.toUpperCase() === 'TODAY'
+        ? t('reports.scopeCurrent')
+        : periodLabel;
 
   return (
     <div className="space-y-6">
@@ -115,7 +160,7 @@ export default function ReportsHubPage() {
           {Object.entries(overview.data?.currentStock ?? {}).map(([key, value]) => (
             <Card key={key}>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">{metricTitle(key)}</CardTitle>
+                <CardTitle className="text-sm font-medium">{metricTitle(key, t)}</CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold">{value}</CardContent>
             </Card>
@@ -126,9 +171,9 @@ export default function ReportsHubPage() {
       <section className="space-y-3">
         <h2 className="text-lg font-medium">
           {t('reports.periodActivity')}
-          <span className="ml-2 text-sm font-normal text-muted-foreground">
-            {String(overview.data?.periodActivity?.periodLabel ?? '')}
-          </span>
+          {periodLabelText ? (
+            <span className="ms-2 text-sm font-normal text-muted-foreground">({periodLabelText})</span>
+          ) : null}
         </h2>
         <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
           {Object.entries(overview.data?.periodActivity ?? {})
@@ -136,7 +181,7 @@ export default function ReportsHubPage() {
             .map(([key, value]) => (
               <Card key={key}>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">{metricTitle(key)}</CardTitle>
+                  <CardTitle className="text-sm font-medium">{metricTitle(key, t)}</CardTitle>
                 </CardHeader>
                 <CardContent className="text-2xl font-semibold">{value}</CardContent>
               </Card>

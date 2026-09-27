@@ -11,7 +11,6 @@ const LINKS = [
   { href: '/reports/low-stock', labelKey: 'reports.links.lowStock' },
   { href: '/reports/supply-requests', labelKey: 'reports.links.supplyRequests' },
   { href: '/reports/transfers', labelKey: 'reports.links.transfers' },
-  { href: '/reports', labelKey: 'reports.allOverview' },
 ] as const;
 
 export default function PharmacyReportsPage() {
