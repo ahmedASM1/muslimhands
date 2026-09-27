@@ -19,7 +19,8 @@ import {
   unitCodeFromName,
   validateMedicineNumbers,
 } from '../catalog/catalog-rules';
-import { parseSpreadsheetRows, pickField } from '../catalog/spreadsheet-import';
+import { parseSpreadsheetRows, pickField, resolveRowItemType } from '../catalog/spreadsheet-import';
+import { dosageFormFromUnitLabel, parseItemDescription } from '../catalog/catalog-item-parse';
 
 export class MedicineQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -290,9 +291,12 @@ export class MedicinesService {
 
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index]!;
-      const name = pickField(
+      const sourceRow = Number(row._source_row || index + 2) || index + 2;
+
+      const rawName = pickField(
         row,
         'name',
+        'item_description',
         'medicine',
         'medicine_name',
         'product',
@@ -301,41 +305,25 @@ export class MedicinesService {
         'item_name',
         'supply',
         'supply_name',
+        'description',
         'الاسم',
         'اسم_الدواء',
         'اسم_المستلزم',
+        'وصف_الصنف',
       );
-      if (!name || name.length < 2) {
-        skipped.push({ row: index + 2, reason: 'Missing or short name' });
+      if (!rawName || rawName.length < 2) {
+        skipped.push({ row: sourceRow, reason: 'Missing or short name / item description' });
         continue;
       }
 
-      const itemTypeRaw = pickField(
-        row,
-        'item_type',
-        'itemtype',
-        'type',
-        'catalog_type',
-        'product_type',
-        'النوع',
-        'نوع_الصنف',
-        'نوع_العنصر',
-      );
-      const itemType = normalizeCatalogItemType(itemTypeRaw || defaultItemType);
+      const parsed = parseItemDescription(rawName);
+      const name = parsed.name || rawName;
+      const itemType = resolveRowItemType(row, defaultItemType);
       const isSupply = itemType !== CATALOG_ITEM_TYPE.MEDICINE;
 
-      const categoryName = pickField(
-        row,
-        'category',
-        'category_name',
-        'التصنيف',
-        'الفئة',
-        'الصنف',
-      );
-      if (!categoryName) {
-        skipped.push({ row: index + 2, reason: 'Category is required' });
-        continue;
-      }
+      const categoryName =
+        pickField(row, 'category', 'category_name', 'التصنيف', 'الفئة', 'الصنف') ||
+        (isSupply ? 'General Medical Supplies' : 'General Medicines');
 
       let category =
         categoryByKey.get(`${categoryName.toLowerCase()}::${itemType}`) ??
@@ -372,7 +360,10 @@ export class MedicinesService {
         categoryByName.set(category.name.toLowerCase(), category);
       }
 
-      const unitRaw = pickField(row, 'unit', 'unit_code', 'unit_name', 'الوحدة', 'وحدة');
+      const unitRaw =
+        pickField(row, 'unit', 'unit_code', 'unit_name', 'الوحدة', 'وحدة') ||
+        parsed.unitHint ||
+        '';
       let unit =
         (unitRaw ? unitByCode.get(unitRaw.toLowerCase()) : undefined) ??
         (unitRaw ? unitByName.get(unitRaw.toLowerCase()) : undefined);
@@ -394,31 +385,63 @@ export class MedicinesService {
 
       if (!unit) {
         unit =
-          units.find((item) => item.code === 'UNIT' || item.code === 'PIECE') ?? units[0];
+          units.find((item) => item.code === 'UNIT' || item.code === 'PIECE') ??
+          units.find((item) => item.name.toLowerCase() === 'unit') ??
+          units[0];
       }
       if (!unit) {
-        skipped.push({ row: index + 2, reason: 'Unit is required (no unit in file or system)' });
-        continue;
+        unit = await this.prisma.unit.create({
+          data: { code: 'UNIT', name: 'Unit', isActive: true },
+        });
+        units.push(unit);
+        unitByCode.set('unit', unit);
+        unitByName.set('unit', unit);
       }
 
-      const dosageFallback = isSupply ? DosageForm.OTHER : DosageForm.TABLET;
-      const dosageForm = isSupply
+      const dosageFromFile = pickField(
+        row,
+        'dosage_form',
+        'dosageform',
+        'form',
+        'الشكل',
+        'الشكل_الصيدلاني',
+      );
+      let dosageForm: DosageForm = isSupply
         ? DosageForm.OTHER
         : normalizeDosageForm(
-            pickField(row, 'dosage_form', 'dosageform', 'form', 'الشكل', 'الشكل_الصيدلاني'),
-            dosageFallback,
+            dosageFromFile,
+            parsed.dosageForm ??
+              dosageFormFromUnitLabel(unitRaw) ??
+              DosageForm.OTHER,
           );
 
-      const strength = isSupply
+      let strength = isSupply
         ? undefined
-        : pickField(row, 'strength', 'concentration', 'التركيز') || undefined;
+        : pickField(row, 'strength', 'concentration', 'التركيز') || parsed.strength || undefined;
+
+      // Import should not fail on free-text stock sheets that omit a clean strength value.
+      if (
+        !isSupply &&
+        requiresStrength(dosageForm as SharedDosageForm, itemType) &&
+        !strength?.trim()
+      ) {
+        dosageForm = DosageForm.OTHER;
+      }
+
       const sku = pickField(row, 'sku', 'code', 'الرمز') || undefined;
       const barcode = pickField(row, 'barcode', 'الباركود') || undefined;
       const genericName =
-        pickField(row, 'generic_name', 'generic', 'الاسم_العلمي', 'الاسم العلمي') || undefined;
+        pickField(row, 'generic_name', 'generic', 'الاسم_العلمي', 'الاسم العلمي') ||
+        parsed.genericName ||
+        undefined;
       const brandName = pickField(row, 'brand_name', 'brand', 'الاسم_التجاري') || undefined;
-      const description = pickField(row, 'description', 'الوصف') || undefined;
-      const minimumStock = Number(pickField(row, 'minimum_stock', 'min_stock', 'الحد_الأدنى') || '0') || 0;
+      const description =
+        pickField(row, 'notes', 'note', 'details', 'full_description', 'ملاحظات') ||
+        parsed.description ||
+        (rawName !== name ? rawName : undefined);
+      const minimumStock =
+        Number(pickField(row, 'minimum_stock', 'min_stock', 'الحد_الأدنى', 'remaining_qty', 'remaining') || '0') ||
+        0;
       const reorderQuantity =
         Number(pickField(row, 'reorder_quantity', 'reorder', 'كمية_إعادة_الطلب') || '0') || 0;
 
@@ -481,7 +504,7 @@ export class MedicinesService {
         }
       } catch (error) {
         skipped.push({
-          row: index + 2,
+          row: sourceRow,
           reason: error instanceof Error ? error.message : 'Failed to save row',
         });
       }
