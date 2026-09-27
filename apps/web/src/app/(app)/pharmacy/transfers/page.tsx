@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { StatusBadge } from '@/components/status-badge';
 import { apiList, apiRequest } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { hasPermission } from '@/lib/permissions';
@@ -27,6 +27,9 @@ interface Transfer {
   }>;
 }
 
+const AWAITING_RECEIPT = 'AWAITING';
+const RECEIVABLE = new Set(['SHIPPED', 'IN_TRANSIT']);
+
 export default function PharmacyTransfersPage() {
   const { t } = useI18n();
   const dash = t('common.emDash');
@@ -34,12 +37,14 @@ export default function PharmacyTransfersPage() {
   const toast = useToast();
   const client = useQueryClient();
   const canReceive = hasPermission(user, 'transfer:receive') || hasPermission(user, 'transfers:receive');
-  const [status, setStatus] = useState('SHIPPED');
+  /** Default: transfers ready for pharmacy receipt (SHIPPED + IN_TRANSIT). */
+  const [status, setStatus] = useState(AWAITING_RECEIPT);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const params = useMemo(() => {
     const query = new URLSearchParams({ limit: '50' });
-    if (status) query.set('status', status);
+    // AWAITING is client-side; API only accepts a single status enum value.
+    if (status && status !== AWAITING_RECEIPT) query.set('status', status);
     return query.toString();
   }, [status]);
 
@@ -47,6 +52,14 @@ export default function PharmacyTransfersPage() {
     queryKey: ['pharmacy-transfers', params],
     queryFn: () => apiList<Transfer>(`/transfers?${params}`),
   });
+
+  const rows = useMemo(() => {
+    const items = transfers.data?.items ?? [];
+    if (status === AWAITING_RECEIPT) {
+      return items.filter((row) => RECEIVABLE.has(row.status));
+    }
+    return items;
+  }, [transfers.data?.items, status]);
 
   const detail = useQuery({
     queryKey: ['pharmacy-transfer', selectedId],
@@ -62,9 +75,17 @@ export default function PharmacyTransfersPage() {
       await client.invalidateQueries({ queryKey: ['pharmacy-transfers'] });
       await client.invalidateQueries({ queryKey: ['pharmacy-stock'] });
       await client.invalidateQueries({ queryKey: ['dashboard'] });
+      await client.invalidateQueries({ queryKey: ['notifications-unread'] });
+      await client.invalidateQueries({ queryKey: ['notifications-summary'] });
     },
     onError: (error: Error) => toast.push(error.message, 'error'),
   });
+
+  function statusLabel(code: string) {
+    const key = `status.${code}`;
+    const label = t(key);
+    return label === key ? code.replaceAll('_', ' ') : label;
+  }
 
   return (
     <div className="space-y-4">
@@ -81,12 +102,13 @@ export default function PharmacyTransfersPage() {
         className="h-10 rounded-md border border-input bg-background px-3 text-sm"
         value={status}
         onChange={(e) => setStatus(e.target.value)}
+        aria-label={t('table.status')}
       >
+        <option value={AWAITING_RECEIPT}>{t('transfer.awaitingReceipt')}</option>
         <option value="">{t('filters.all')}</option>
-        <option value="SHIPPED">SHIPPED</option>
-        <option value="IN_TRANSIT">IN_TRANSIT</option>
-        <option value="RECEIVED">RECEIVED</option>
-        <option value="PREPARED">PREPARED</option>
+        <option value="SHIPPED">{statusLabel('SHIPPED')}</option>
+        <option value="IN_TRANSIT">{statusLabel('IN_TRANSIT')}</option>
+        <option value="RECEIVED">{statusLabel('RECEIVED')}</option>
       </select>
 
       <div className="overflow-x-auto rounded-md border">
@@ -101,11 +123,13 @@ export default function PharmacyTransfersPage() {
             </tr>
           </thead>
           <tbody>
-            {(transfers.data?.items ?? []).map((row) => (
+            {rows.map((row) => (
               <tr key={row.id} className="border-t">
                 <td className="px-3 py-2 font-medium">{row.transferNumber}</td>
                 <td className="px-3 py-2">{row.warehouse?.name}</td>
-                <td className="px-3 py-2"><Badge>{row.status}</Badge></td>
+                <td className="px-3 py-2">
+                  <StatusBadge status={row.status} />
+                </td>
                 <td className="px-3 py-2">
                   {row.dispatchedAt ? String(row.dispatchedAt).replace('T', ' ').slice(0, 16) : dash}
                 </td>
@@ -114,7 +138,7 @@ export default function PharmacyTransfersPage() {
                     <Button size="sm" variant="outline" onClick={() => setSelectedId(row.id)}>
                       {t('actions.view')}
                     </Button>
-                    {(row.status === 'SHIPPED' || row.status === 'IN_TRANSIT') && canReceive ? (
+                    {RECEIVABLE.has(row.status) && canReceive ? (
                       <Button
                         size="sm"
                         onClick={() => {
@@ -132,8 +156,14 @@ export default function PharmacyTransfersPage() {
             ))}
           </tbody>
         </table>
-        {(transfers.data?.items.length ?? 0) === 0 && !transfers.isLoading ? (
+        {rows.length === 0 && !transfers.isLoading ? (
           <p className="p-6 text-sm text-muted-foreground">{t('transfer.noTransfersFilter')}</p>
+        ) : null}
+        {transfers.isLoading ? (
+          <p className="p-6 text-sm text-muted-foreground">{t('common.loading')}</p>
+        ) : null}
+        {transfers.error ? (
+          <p className="p-6 text-sm text-destructive">{(transfers.error as Error).message}</p>
         ) : null}
       </div>
 
@@ -144,7 +174,7 @@ export default function PharmacyTransfersPage() {
               <CardTitle>{detail.data.transferNumber}</CardTitle>
               <p className="text-sm text-muted-foreground">
                 {t('transfer.fromWarehouse', { name: detail.data.warehouse?.name ?? dash })} ·{' '}
-                <Badge>{detail.data.status}</Badge>
+                <StatusBadge status={detail.data.status} />
               </p>
             </div>
             <Button size="sm" variant="outline" onClick={() => setSelectedId(null)}>
@@ -172,7 +202,7 @@ export default function PharmacyTransfersPage() {
                 ))}
               </tbody>
             </table>
-            {(detail.data.status === 'SHIPPED' || detail.data.status === 'IN_TRANSIT') && canReceive ? (
+            {RECEIVABLE.has(detail.data.status) && canReceive ? (
               <Button onClick={() => receive.mutate(detail.data!.id)} disabled={receive.isPending}>
                 {t('actions.receiveIntoStock')}
               </Button>

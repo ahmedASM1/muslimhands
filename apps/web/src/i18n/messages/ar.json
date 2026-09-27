@@ -967,7 +967,8 @@
     "yourPharmacy": "صيدليتك",
     "noTransfersFilter": "لا توجد تحويلات لهذا التصفية.",
     "fromWarehouse": "من {{name}}",
-    "shipped": "تاريخ الشحن"
+    "shipped": "تاريخ الشحن",
+    "awaitingReceipt": "بانتظار الاستلام"
   },
   "pharmacy": {
     "stockReadOnlyNote": "مخزون مستلم من المستودع المركزي. التعديلات غير متاحة في هذه المرحلة.",

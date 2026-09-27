@@ -967,7 +967,8 @@
     "yourPharmacy": "your pharmacy",
     "noTransfersFilter": "No transfers for this filter.",
     "fromWarehouse": "From {{name}}",
-    "shipped": "Shipped"
+    "shipped": "Shipped",
+    "awaitingReceipt": "Awaiting receipt"
   },
   "pharmacy": {
     "stockReadOnlyNote": "Stock received from the central warehouse. Adjustments are not available in this phase.",
