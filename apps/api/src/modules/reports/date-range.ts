@@ -8,7 +8,7 @@
  * - Period presets (TODAY / 7D / 30D) also use UTC day starts.
  */
 
-export type ReportPeriodPreset = 'TODAY' | '7D' | '30D' | 'CUSTOM';
+export type ReportPeriodPreset = 'ALL' | 'TODAY' | '7D' | '30D' | 'CUSTOM';
 
 export interface DateRange {
   start: Date;
@@ -32,10 +32,14 @@ export function parseInclusiveDateRange(input: {
 
   if (fromRaw) {
     start = startOfUtcDay(new Date(fromRaw));
+  } else if (period === 'ALL') {
+    // Far-past lower bound so "all" reports are not clipped by the default 30D window.
+    start = startOfUtcDay(new Date('1970-01-01T00:00:00.000Z'));
   } else {
     start = startOfUtcDay(new Date());
     switch (period) {
       case 'TODAY':
+      case 'CURRENT':
         break;
       case '7D':
       case 'THIS_WEEK':
@@ -56,7 +60,10 @@ export function parseInclusiveDateRange(input: {
   return {
     start,
     end,
-    label: `${start.toISOString().slice(0, 10)} → ${end.toISOString().slice(0, 10)}`,
+    label:
+      period === 'ALL' && !fromRaw && !toRaw
+        ? 'all'
+        : `${start.toISOString().slice(0, 10)} → ${end.toISOString().slice(0, 10)}`,
   };
 }
 

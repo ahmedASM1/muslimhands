@@ -10,6 +10,7 @@ import {
 } from '../../common/inventory/inventory-transaction.service';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 
 export class WarehouseStockQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -42,12 +43,13 @@ export class WarehouseStockService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly inventoryTx: InventoryTransactionService,
+    private readonly settings: SettingsService,
   ) {}
 
   async list(query: WarehouseStockQueryDto) {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
 
     const where: Prisma.WarehouseStockWhereInput = {
       ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
@@ -269,7 +271,7 @@ export class WarehouseStockService {
   async summary(warehouseId?: string) {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
     const where = warehouseId ? { warehouseId } : {};
 
     const [aggregate, medicinesWithStock, expiredRows, expiringRows, outRows] = await Promise.all([

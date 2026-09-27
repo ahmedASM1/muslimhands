@@ -3,10 +3,14 @@ import { RoleCode, type AuthenticatedUser } from '@mh/shared';
 import { LocationType, SupplyRequestStatus, TransferStatus } from '@prisma/client';
 import { expiryWarningDate, resolvePharmacyId } from '../../common/access/access';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
 
   async overview(user: AuthenticatedUser) {
     const pharmacyId = resolvePharmacyId(user);
@@ -30,7 +34,7 @@ export class DashboardService {
   private async warehouseOverview(user: AuthenticatedUser) {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
 
     const [
       medicines,
@@ -158,7 +162,7 @@ export class DashboardService {
     today.setUTCHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
     const where = id ? { pharmacyId: id } : {};
 
     const [
@@ -280,7 +284,7 @@ export class DashboardService {
   }
 
   private async generalOverview(user: AuthenticatedUser, pharmacyId?: string) {
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
     const [
       pharmacies,
       medicines,

@@ -4,8 +4,10 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -13,6 +15,7 @@ import {
   Matches,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { DosageForm, PERMISSIONS } from '@mh/shared';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -26,6 +29,27 @@ type UploadedSpreadsheet = {
   buffer: Buffer;
   originalname: string;
 };
+
+class PackLevelDto {
+  @IsString()
+  @MinLength(1)
+  code: string;
+
+  @IsString()
+  @MinLength(1)
+  label: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  factorToBase: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
+}
 
 class MedicineDto {
   @IsUUID()
@@ -84,6 +108,12 @@ class MedicineDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PackLevelDto)
+  packLevels?: PackLevelDto[];
 }
 
 class UpdateMedicineDto {
@@ -146,6 +176,12 @@ class UpdateMedicineDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PackLevelDto)
+  packLevels?: PackLevelDto[];
 }
 
 class MedicineStatusDto {

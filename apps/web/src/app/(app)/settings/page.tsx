@@ -15,6 +15,8 @@ import { useToast } from '@/lib/toast';
 
 interface SystemSettings {
   expiryWarningDays: number;
+  expiryWarningValue?: number;
+  expiryWarningUnit?: 'DAYS' | 'WEEKS' | 'MONTHS';
   organizationName: string;
 }
 
@@ -99,7 +101,8 @@ export default function UserSettingsPage() {
   });
 
   const [orgName, setOrgName] = useState('');
-  const [days, setDays] = useState('90');
+  const [expiryValue, setExpiryValue] = useState('3');
+  const [expiryUnit, setExpiryUnit] = useState<'DAYS' | 'WEEKS' | 'MONTHS'>('MONTHS');
   const [testTo, setTestTo] = useState('');
   const [targets, setTargets] = useState<Record<TargetKey, boolean>>(() =>
     Object.fromEntries(TARGET_KEYS.map((key) => [key, false])) as Record<TargetKey, boolean>,
@@ -111,7 +114,10 @@ export default function UserSettingsPage() {
   useEffect(() => {
     if (!system.data) return;
     setOrgName(String(system.data.organizationName ?? ''));
-    setDays(String(system.data.expiryWarningDays ?? 90));
+    setExpiryValue(String(system.data.expiryWarningValue ?? system.data.expiryWarningDays ?? 90));
+    setExpiryUnit(
+      (system.data.expiryWarningUnit as 'DAYS' | 'WEEKS' | 'MONTHS' | undefined) ?? 'DAYS',
+    );
   }, [system.data]);
 
   const saveSystem = useMutation({
@@ -120,7 +126,8 @@ export default function UserSettingsPage() {
         method: 'PATCH',
         body: {
           organizationName: orgName,
-          expiryWarningDays: Number(days),
+          expiryWarningValue: Number(expiryValue),
+          expiryWarningUnit: expiryUnit,
         },
       }),
     onSuccess: async () => {
@@ -233,8 +240,32 @@ export default function UserSettingsPage() {
               <Input value={orgName} disabled={!canManageSystem} onChange={(e) => setOrgName(e.target.value)} />
             </div>
             <div className="grid gap-1">
-              <Label>{t('settings.expiryWarningDays')}</Label>
-              <Input type="number" min={1} value={days} disabled={!canManageSystem} onChange={(e) => setDays(e.target.value)} />
+              <Label>{t('settings.expiryWarningLead')}</Label>
+              <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
+                <Input
+                  type="number"
+                  min={1}
+                  value={expiryValue}
+                  disabled={!canManageSystem}
+                  onChange={(e) => setExpiryValue(e.target.value)}
+                />
+                <select
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={expiryUnit}
+                  disabled={!canManageSystem}
+                  onChange={(e) => setExpiryUnit(e.target.value as 'DAYS' | 'WEEKS' | 'MONTHS')}
+                >
+                  <option value="DAYS">{t('profile.timeUnitDays')}</option>
+                  <option value="WEEKS">{t('profile.timeUnitWeeks')}</option>
+                  <option value="MONTHS">{t('profile.timeUnitMonths')}</option>
+                </select>
+              </div>
+              <p className="text-xs text-muted-foreground">{t('settings.expiryWarningLeadHint')}</p>
+              {system.data?.expiryWarningDays ? (
+                <p className="text-xs text-muted-foreground">
+                  ≈ {system.data.expiryWarningDays} {t('profile.timeUnitDays').toLowerCase()}
+                </p>
+              ) : null}
             </div>
             {canManageSystem ? (
               <Button onClick={() => saveSystem.mutate()} disabled={saveSystem.isPending}>

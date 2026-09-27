@@ -23,6 +23,13 @@ import { parseSpreadsheetRows, pickField, resolveRowItemType, extractUnknownColu
 import { dosageFormFromUnitLabel, parseItemDescription } from '../catalog/catalog-item-parse';
 import { renderExport } from '../reports/exporters';
 import type { ExportFormat, ReportExportPayload } from '../reports/types/report.types';
+import type { PackLevelInput } from '../../common/inventory/packaging';
+
+const medicineInclude = {
+  category: true,
+  unit: true,
+  packLevels: { orderBy: { sortOrder: 'asc' as const } },
+} satisfies Prisma.MedicineInclude;
 
 export class MedicineQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -91,7 +98,7 @@ export class MedicinesService {
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: sortable[query.sortBy ?? 'name'] ?? { name: 'asc' },
-        include: { category: true, unit: true },
+        include: medicineInclude,
       }),
     ]);
 
@@ -109,7 +116,10 @@ export class MedicinesService {
   async get(id: string) {
     const medicine = await this.prisma.medicine.findFirst({
       where: { id, deletedAt: null },
-      include: { category: true, unit: true, batches: { orderBy: { expiryDate: 'asc' } } },
+      include: {
+        ...medicineInclude,
+        batches: { orderBy: { expiryDate: 'asc' } },
+      },
     });
     if (!medicine) {
       throw new NotFoundException('Medicine not found');
@@ -133,6 +143,7 @@ export class MedicinesService {
       referenceValue?: number;
       description?: string;
       importMetadata?: Record<string, string> | null;
+      packLevels?: PackLevelInput[];
     },
     userId: string,
   ) {
@@ -144,25 +155,34 @@ export class MedicinesService {
     if (barcode) {
       await this.assertUniqueBarcode(barcode);
     }
+    const packLevels = this.normalizePackLevels(data.packLevels);
 
-    const medicine = await this.prisma.medicine.create({
-      data: {
-        categoryId: data.categoryId,
-        unitId: data.unitId,
-        name: data.name.trim(),
-        genericName: data.genericName?.trim() || null,
-        brandName: data.brandName?.trim() || null,
-        strength: data.strength?.trim() || null,
-        dosageForm: data.dosageForm,
-        sku,
-        barcode,
-        minimumStock: data.minimumStock,
-        reorderQuantity: data.reorderQuantity,
-        referenceValue: data.referenceValue ?? null,
-        description: data.description?.trim() || null,
-        importMetadata: data.importMetadata ?? undefined,
-      },
-      include: { category: true, unit: true },
+    const medicine = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.medicine.create({
+        data: {
+          categoryId: data.categoryId,
+          unitId: data.unitId,
+          name: data.name.trim(),
+          genericName: data.genericName?.trim() || null,
+          brandName: data.brandName?.trim() || null,
+          strength: data.strength?.trim() || null,
+          dosageForm: data.dosageForm,
+          sku,
+          barcode,
+          minimumStock: data.minimumStock,
+          reorderQuantity: data.reorderQuantity,
+          referenceValue: data.referenceValue ?? null,
+          description: data.description?.trim() || null,
+          importMetadata: data.importMetadata ?? undefined,
+        },
+      });
+      if (packLevels.length) {
+        await this.syncPackLevels(tx, created.id, packLevels);
+      }
+      return tx.medicine.findUniqueOrThrow({
+        where: { id: created.id },
+        include: medicineInclude,
+      });
     });
     await this.audit.record({
       userId,
@@ -192,6 +212,7 @@ export class MedicinesService {
       description?: string;
       isActive?: boolean;
       importMetadata?: Record<string, string> | null;
+      packLevels?: PackLevelInput[];
     },
     userId: string,
   ) {
@@ -225,26 +246,37 @@ export class MedicinesService {
             ...(data.importMetadata ?? {}),
           };
 
-    const updated = await this.prisma.medicine.update({
-      where: { id },
-      data: {
-        categoryId: data.categoryId,
-        unitId: data.unitId,
-        name: data.name?.trim(),
-        genericName: data.genericName?.trim(),
-        brandName: data.brandName?.trim(),
-        strength: data.strength?.trim(),
-        dosageForm: data.dosageForm,
-        sku: data.sku?.toUpperCase(),
-        barcode,
-        minimumStock: data.minimumStock,
-        reorderQuantity: data.reorderQuantity,
-        referenceValue: data.referenceValue,
-        description: data.description?.trim(),
-        isActive: data.isActive,
-        importMetadata: mergedMetadata === undefined ? undefined : mergedMetadata,
-      },
-      include: { category: true, unit: true },
+    const packLevels =
+      data.packLevels === undefined ? undefined : this.normalizePackLevels(data.packLevels);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.medicine.update({
+        where: { id },
+        data: {
+          categoryId: data.categoryId,
+          unitId: data.unitId,
+          name: data.name?.trim(),
+          genericName: data.genericName?.trim(),
+          brandName: data.brandName?.trim(),
+          strength: data.strength?.trim(),
+          dosageForm: data.dosageForm,
+          sku: data.sku?.toUpperCase(),
+          barcode,
+          minimumStock: data.minimumStock,
+          reorderQuantity: data.reorderQuantity,
+          referenceValue: data.referenceValue,
+          description: data.description?.trim(),
+          isActive: data.isActive,
+          importMetadata: mergedMetadata === undefined ? undefined : mergedMetadata,
+        },
+      });
+      if (packLevels !== undefined) {
+        await this.syncPackLevels(tx, id, packLevels);
+      }
+      return tx.medicine.findUniqueOrThrow({
+        where: { id },
+        include: medicineInclude,
+      });
     });
     await this.audit.record({
       userId,
@@ -255,6 +287,56 @@ export class MedicinesService {
       newValues: data as object,
     });
     return this.withStatus(updated);
+  }
+
+  private normalizePackLevels(raw?: PackLevelInput[] | null): PackLevelInput[] {
+    if (!raw?.length) return [];
+    const seen = new Set<string>();
+    const levels: PackLevelInput[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const item = raw[i]!;
+      const code = String(item.code ?? '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9_]/g, '');
+      const label = String(item.label ?? '').trim();
+      const factorToBase = Math.floor(Number(item.factorToBase));
+      if (!code || !label) {
+        throw new BadRequestException('Pack level code and label are required');
+      }
+      if (!Number.isFinite(factorToBase) || factorToBase < 1) {
+        throw new BadRequestException(`Pack level ${code} factorToBase must be >= 1`);
+      }
+      if (seen.has(code)) {
+        throw new BadRequestException(`Duplicate pack level code: ${code}`);
+      }
+      seen.add(code);
+      levels.push({
+        code,
+        label,
+        factorToBase,
+        sortOrder: item.sortOrder ?? i,
+      });
+    }
+    return levels;
+  }
+
+  private async syncPackLevels(
+    tx: Prisma.TransactionClient,
+    medicineId: string,
+    levels: PackLevelInput[],
+  ) {
+    await tx.medicinePackLevel.deleteMany({ where: { medicineId } });
+    if (!levels.length) return;
+    await tx.medicinePackLevel.createMany({
+      data: levels.map((level, index) => ({
+        medicineId,
+        code: level.code,
+        label: level.label,
+        factorToBase: level.factorToBase,
+        sortOrder: level.sortOrder ?? index,
+      })),
+    });
   }
 
   setStatus(id: string, isActive: boolean, userId: string) {
@@ -707,7 +789,7 @@ export class MedicinesService {
       where,
       take: Math.min(Number(query.limit) || 5000, 10000),
       orderBy: { name: 'asc' },
-      include: { category: true, unit: true },
+      include: medicineInclude,
     });
 
     const metaKeys = new Set<string>();

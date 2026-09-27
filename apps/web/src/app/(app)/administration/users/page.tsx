@@ -228,13 +228,13 @@ export default function UsersPage() {
             <CardDescription>{t('admin.users.inviteDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
-            <form
+      <form
               className="grid gap-4 md:grid-cols-2"
               onSubmit={(event) => {
                 event.preventDefault();
-                invite.mutate();
-              }}
-            >
+          invite.mutate();
+        }}
+      >
               <div className="space-y-1.5">
                 <Label className="text-[#12304A]">{t('profile.firstName')}</Label>
                 <Input

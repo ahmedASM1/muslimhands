@@ -410,6 +410,11 @@ export class UsersService {
       emailEnabled: pref.emailEnabled,
       inAppEnabled: pref.inAppEnabled,
       preferredLanguage: pref.preferredLanguage,
+      emailLowStock: pref.emailLowStock,
+      emailExpiringSoon: pref.emailExpiringSoon,
+      emailExpiredStock: pref.emailExpiredStock,
+      expiryAlertValue: pref.expiryAlertValue,
+      expiryAlertUnit: pref.expiryAlertUnit,
       // Security emails (invitation, password reset) are always sent.
       securityEmailsAlwaysOn: true,
     };
@@ -421,6 +426,11 @@ export class UsersService {
       emailEnabled?: boolean;
       inAppEnabled?: boolean;
       preferredLanguage?: 'EN' | 'AR';
+      emailLowStock?: boolean;
+      emailExpiringSoon?: boolean;
+      emailExpiredStock?: boolean;
+      expiryAlertValue?: number | null;
+      expiryAlertUnit?: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
     },
   ) {
     const pref = await this.prisma.notificationPreference.upsert({
@@ -431,18 +441,39 @@ export class UsersService {
         ...(data.preferredLanguage !== undefined
           ? { preferredLanguage: data.preferredLanguage }
           : {}),
+        ...(data.emailLowStock !== undefined ? { emailLowStock: data.emailLowStock } : {}),
+        ...(data.emailExpiringSoon !== undefined
+          ? { emailExpiringSoon: data.emailExpiringSoon }
+          : {}),
+        ...(data.emailExpiredStock !== undefined
+          ? { emailExpiredStock: data.emailExpiredStock }
+          : {}),
+        ...(data.expiryAlertValue !== undefined
+          ? { expiryAlertValue: data.expiryAlertValue }
+          : {}),
+        ...(data.expiryAlertUnit !== undefined ? { expiryAlertUnit: data.expiryAlertUnit } : {}),
       },
       create: {
         userId,
         emailEnabled: data.emailEnabled ?? true,
         inAppEnabled: data.inAppEnabled ?? true,
         preferredLanguage: data.preferredLanguage ?? 'EN',
+        emailLowStock: data.emailLowStock ?? true,
+        emailExpiringSoon: data.emailExpiringSoon ?? true,
+        emailExpiredStock: data.emailExpiredStock ?? true,
+        expiryAlertValue: data.expiryAlertValue ?? null,
+        expiryAlertUnit: data.expiryAlertUnit ?? null,
       },
     });
     return {
       emailEnabled: pref.emailEnabled,
       inAppEnabled: pref.inAppEnabled,
       preferredLanguage: pref.preferredLanguage,
+      emailLowStock: pref.emailLowStock,
+      emailExpiringSoon: pref.emailExpiringSoon,
+      emailExpiredStock: pref.emailExpiredStock,
+      expiryAlertValue: pref.expiryAlertValue,
+      expiryAlertUnit: pref.expiryAlertUnit,
       securityEmailsAlwaysOn: true,
     };
   }

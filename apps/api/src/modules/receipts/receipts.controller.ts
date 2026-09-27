@@ -11,6 +11,7 @@ import {
   IsUUID,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PERMISSIONS } from '@mh/shared';
@@ -20,6 +21,17 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { RequestUser } from '../../common/types/authenticated-request';
 import { ReceiptQueryDto, ReceiptsService } from './receipts.service';
+
+class PackEntryDto {
+  @IsString()
+  @MinLength(1)
+  code: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  quantity: number;
+}
 
 class ReceiptItemDto {
   @IsUUID()
@@ -42,10 +54,17 @@ class ReceiptItemDto {
   @IsDateString()
   expiryDate?: string;
 
+  @ValidateIf((o: ReceiptItemDto) => !o.packEntries?.length)
   @Type(() => Number)
   @IsNumber()
   @Min(1)
-  quantity: number;
+  quantity?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PackEntryDto)
+  packEntries?: PackEntryDto[];
 
   @IsOptional()
   @Type(() => Number)

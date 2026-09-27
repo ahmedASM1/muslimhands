@@ -1,4 +1,4 @@
-﻿import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { AuditAction, type AuthenticatedUser } from '@mh/shared';
 import {
   LocationType,
@@ -9,6 +9,7 @@ import {
 import { expiryStatus, expiryWarningDate } from '../../common/access/access';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { SettingsService } from '../settings/settings.service';
 import {
   assertCanExport,
   assertCanViewBeneficiaryReports,
@@ -44,16 +45,17 @@ export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly settings: SettingsService,
   ) {}
 
-  // ─── Overview / summaries ───────────────────────────────────────────
+  // --- Overview / summaries -------------------------------------------
 
   async overview(user: AuthenticatedUser, query: ReportBaseQueryDto) {
     const range = parseInclusiveDateRange(query);
     const pharmacyId = scopedPharmacyId(user, query.pharmacyId);
     const warehouseId = scopedWarehouseId(user, query.warehouseId);
     const today = todayUtc();
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
     const canWh = canViewWarehouseReports(user);
     const canPh = canViewPharmacyReports(user);
 
@@ -239,7 +241,7 @@ export class ReportsService {
     };
   }
 
-  // ─── Inventory (combined locations) ─────────────────────────────────
+  // --- Inventory (combined locations) ---------------------------------
 
   async inventory(user: AuthenticatedUser, query: ReportBaseQueryDto) {
     const includeWh = canViewWarehouseReports(user);
@@ -334,7 +336,7 @@ export class ReportsService {
     return this.page(filtered.slice((page - 1) * limit, page * limit), page, limit, total);
   }
 
-  // ─── Stock movements ────────────────────────────────────────────────
+  // --- Stock movements ------------------------------------------------
 
   async stockMovements(user: AuthenticatedUser, query: StockMovementReportQueryDto) {
     const range = parseInclusiveDateRange(query);
@@ -426,7 +428,7 @@ export class ReportsService {
     return this.page(items, page, limit, total);
   }
 
-  // ─── Receipts ───────────────────────────────────────────────────────
+  // --- Receipts -------------------------------------------------------
 
   async receipts(user: AuthenticatedUser, query: ReceiptReportQueryDto) {
     if (!canViewWarehouseReports(user)) {
@@ -523,7 +525,7 @@ export class ReportsService {
     return this.page(items, page, limit, total);
   }
 
-  // ─── Supply requests ────────────────────────────────────────────────
+  // --- Supply requests ------------------------------------------------
 
   async supplyRequests(user: AuthenticatedUser, query: SupplyRequestReportQueryDto) {
     const range = parseInclusiveDateRange(query);
@@ -576,7 +578,7 @@ export class ReportsService {
       status: row.status,
       requestedQuantities: row.items.map((i) => `${i.medicine.name}:${i.requestedQty}`).join('; '),
       approvedQuantities: row.items
-        .map((i) => `${i.medicine.name}:${i.approvedQty ?? '—'}`)
+        .map((i) => `${i.medicine.name}:${i.approvedQty ?? '�'}`)
         .join('; '),
       requestedBy: `${row.createdBy.firstName} ${row.createdBy.lastName}`.trim(),
       reviewedBy: row.reviewedBy
@@ -588,7 +590,7 @@ export class ReportsService {
     return this.page(items, page, limit, total);
   }
 
-  // ─── Transfers ──────────────────────────────────────────────────────
+  // --- Transfers ------------------------------------------------------
 
   async transfers(user: AuthenticatedUser, query: TransferReportQueryDto) {
     const range = parseInclusiveDateRange(query);
@@ -668,9 +670,9 @@ export class ReportsService {
           : null,
         custodyNote:
           row.status === TransferStatus.SHIPPED || row.status === TransferStatus.IN_TRANSIT
-            ? 'SHIPPED — not yet pharmacy stock'
+            ? 'SHIPPED � not yet pharmacy stock'
             : row.status === TransferStatus.RECEIVED
-              ? 'RECEIVED — pharmacy stock'
+              ? 'RECEIVED � pharmacy stock'
               : row.status,
       })),
     );
@@ -678,7 +680,7 @@ export class ReportsService {
     return this.page(items, page, limit, total);
   }
 
-  // ─── Dispensing ─────────────────────────────────────────────────────
+  // --- Dispensing -----------------------------------------------------
 
   async dispensing(user: AuthenticatedUser, query: DispensingReportQueryDto) {
     if (!canViewDispensingReports(user)) {
@@ -854,7 +856,7 @@ export class ReportsService {
     };
   }
 
-  // ─── Beneficiaries ──────────────────────────────────────────────────
+  // --- Beneficiaries --------------------------------------------------
 
   async beneficiaries(user: AuthenticatedUser, query: BeneficiaryReportQueryDto) {
     assertCanViewBeneficiaryReports(user);
@@ -918,7 +920,7 @@ export class ReportsService {
     return this.page(items, page, limit, total);
   }
 
-  // ─── Expiry ─────────────────────────────────────────────────────────
+  // --- Expiry ---------------------------------------------------------
 
   async expiry(user: AuthenticatedUser, query: ReportBaseQueryDto) {
     const today = todayUtc();
@@ -960,7 +962,7 @@ export class ReportsService {
     return this.page(rows.slice((page - 1) * limit, page * limit), page, limit, total);
   }
 
-  // ─── Low stock ──────────────────────────────────────────────────────
+  // --- Low stock ------------------------------------------------------
 
   /**
    * LOW_STOCK uses existing medicine.minimumStock threshold:
@@ -1022,7 +1024,7 @@ export class ReportsService {
     return this.page(rows.slice((page - 1) * limit, page * limit), page, limit, total);
   }
 
-  // ─── Legacy period summaries (kept for existing UI during migration) ─
+  // --- Legacy period summaries (kept for existing UI during migration) -
 
   async warehousePeriod(period: string, from?: string, to?: string) {
     const range = parseInclusiveDateRange({ period, dateFrom: from, dateTo: to });
@@ -1053,7 +1055,7 @@ export class ReportsService {
     return { period, start: range.start, end: range.end, openingStock, movements: periodRows, closingStock };
   }
 
-  // ─── Export ─────────────────────────────────────────────────────────
+  // --- Export ---------------------------------------------------------
 
   async export(
     user: AuthenticatedUser,
@@ -1309,7 +1311,7 @@ export class ReportsService {
     }
   }
 
-  // ─── helpers ────────────────────────────────────────────────────────
+  // --- helpers --------------------------------------------------------
 
   private cols(keys: string[]): ReportColumn[] {
     return keys.map((key) => ({
@@ -1336,7 +1338,7 @@ export class ReportsService {
   ): Promise<Record<string, unknown>[]> {
     const warehouseId = scopedWarehouseId(user, query.warehouseId);
     const today = todayUtc();
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
 
     const where: Prisma.WarehouseStockWhereInput = {
       ...(warehouseId ? { warehouseId } : {}),
@@ -1416,7 +1418,7 @@ export class ReportsService {
   ): Promise<Record<string, unknown>[]> {
     const pharmacyId = scopedPharmacyId(user, query.pharmacyId);
     const today = todayUtc();
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
 
     const where: Prisma.PharmacyStockWhereInput = {
       ...(pharmacyId ? { pharmacyId } : {}),

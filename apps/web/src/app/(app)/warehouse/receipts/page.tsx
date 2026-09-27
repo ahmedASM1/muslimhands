@@ -19,12 +19,19 @@ interface Warehouse {
   code: string;
 }
 
+interface PackLevel {
+  code: string;
+  label: string;
+  factorToBase: number;
+}
+
 interface MedicineOption {
   id: string;
   name: string;
   sku: string;
   isActive: boolean;
   unit?: { code: string; name: string };
+  packLevels?: PackLevel[];
   batches?: Array<{ id: string; batchNumber: string; expiryDate: string }>;
 }
 
@@ -33,6 +40,7 @@ interface ReceiptItem {
   medicineId: string;
   batchId: string;
   quantity: number;
+  packBreakdown?: Array<{ code: string; quantity: number }> | null;
   unitCost?: number | null;
   notes?: string | null;
   medicine?: MedicineOption;
@@ -59,19 +67,52 @@ interface ReceiptRow {
 
 interface DraftItem {
   medicineId: string;
+  batchMode: 'existing' | 'new';
   batchId: string;
+  batchNumber: string;
+  manufacturingDate: string;
+  expiryDate: string;
+  qtyMode: 'base' | 'packs';
   quantity: string;
+  packQtys: Record<string, string>;
   unitCost: string;
   notes: string;
 }
 
 const emptyItem = (): DraftItem => ({
   medicineId: '',
+  batchMode: 'existing',
   batchId: '',
+  batchNumber: '',
+  manufacturingDate: '',
+  expiryDate: '',
+  qtyMode: 'base',
   quantity: '1',
+  packQtys: {},
   unitCost: '',
   notes: '',
 });
+
+function packEntriesFromDraft(item: DraftItem, levels: PackLevel[]) {
+  return levels
+    .map((level) => ({
+      code: level.code,
+      quantity: Number(item.packQtys[level.code] || 0),
+    }))
+    .filter((entry) => entry.quantity > 0);
+}
+
+function baseUnitsFromDraft(item: DraftItem, levels: PackLevel[]) {
+  if (item.qtyMode === 'packs' && levels.length) {
+    return packEntriesFromDraft(item, levels).reduce(
+      (sum, entry) =>
+        sum +
+        entry.quantity * (levels.find((l) => l.code === entry.code)?.factorToBase ?? 1),
+      0,
+    );
+  }
+  return Number(item.quantity) || 0;
+}
 
 export default function ReceiptsPage() {
   const { t } = useI18n();
@@ -142,13 +183,33 @@ export default function ReceiptsPage() {
         supplierName: supplierName.trim() || undefined,
         supplierRef: supplierRef.trim() || undefined,
         notes: notes.trim() || undefined,
-        items: items.map((item) => ({
-          medicineId: item.medicineId,
-          batchId: item.batchId,
-          quantity: Number(item.quantity),
-          unitCost: item.unitCost ? Number(item.unitCost) : undefined,
-          notes: item.notes.trim() || undefined,
-        })),
+        items: items.map((item) => {
+          const medicine = medicines.data?.items.find((row) => row.id === item.medicineId);
+          const levels = medicine?.packLevels ?? [];
+          const packEntries =
+            item.qtyMode === 'packs' && levels.length ? packEntriesFromDraft(item, levels) : undefined;
+          const quantity = packEntries?.length
+            ? undefined
+            : Number(item.quantity) || 0;
+          const base: Record<string, unknown> = {
+            medicineId: item.medicineId,
+            unitCost: item.unitCost ? Number(item.unitCost) : undefined,
+            notes: item.notes.trim() || undefined,
+            ...(packEntries?.length ? { packEntries } : { quantity }),
+          };
+          if (item.batchMode === 'new') {
+            base.batchNumber = item.batchNumber.trim();
+            base.manufacturingDate = item.manufacturingDate
+              ? new Date(item.manufacturingDate).toISOString()
+              : undefined;
+            base.expiryDate = item.expiryDate
+              ? new Date(item.expiryDate).toISOString()
+              : undefined;
+          } else {
+            base.batchId = item.batchId;
+          }
+          return base;
+        }),
       };
       if (!payload.warehouseId) throw new Error(t('supply.warehouseRequired'));
       if (editingId) {
@@ -212,13 +273,27 @@ export default function ReceiptsPage() {
     setSupplierRef(row.supplierRef ?? '');
     setNotes(row.notes ?? '');
     setItems(
-      row.items.map((item) => ({
-        medicineId: item.medicineId,
-        batchId: item.batchId,
-        quantity: String(item.quantity),
-        unitCost: item.unitCost == null ? '' : String(item.unitCost),
-        notes: item.notes ?? '',
-      })),
+      row.items.map((item) => {
+        const levels = item.medicine?.packLevels ?? [];
+        const breakdown = Array.isArray(item.packBreakdown) ? item.packBreakdown : [];
+        const packQtys: Record<string, string> = {};
+        for (const entry of breakdown) {
+          if (entry?.code) packQtys[entry.code] = String(entry.quantity ?? '');
+        }
+        return {
+          medicineId: item.medicineId,
+          batchMode: 'existing' as const,
+          batchId: item.batchId,
+          batchNumber: '',
+          manufacturingDate: '',
+          expiryDate: '',
+          qtyMode: breakdown.length && levels.length ? ('packs' as const) : ('base' as const),
+          quantity: String(item.quantity),
+          packQtys,
+          unitCost: item.unitCost == null ? '' : String(item.unitCost),
+          notes: item.notes ?? '',
+        };
+      }),
     );
     setMode('edit');
   }
@@ -232,7 +307,8 @@ export default function ReceiptsPage() {
   }
 
   const estimatedCost = items.reduce((sum, item) => {
-    const qty = Number(item.quantity) || 0;
+    const medicine = medicines.data?.items.find((row) => row.id === item.medicineId);
+    const qty = baseUnitsFromDraft(item, medicine?.packLevels ?? []);
     const cost = Number(item.unitCost) || 0;
     return sum + qty * cost;
   }, 0);
@@ -297,110 +373,276 @@ export default function ReceiptsPage() {
           <CardContent className="space-y-3">
             {items.map((item, index) => {
               const medicine = medicines.data?.items.find((row) => row.id === item.medicineId);
+              const levels = medicine?.packLevels ?? [];
               const batch = medicineBatches(item.medicineId).find((row) => row.id === item.batchId);
-              const qty = Number(item.quantity) || 0;
+              const qty = baseUnitsFromDraft(item, levels);
               const cost = Number(item.unitCost) || 0;
               return (
-                <div key={index} className="grid gap-2 rounded-md border p-3 md:grid-cols-6">
-                  <div className="grid gap-1 md:col-span-2">
-                    <Label>{t('table.medicine')}</Label>
-                    <select
-                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                      value={item.medicineId}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((row, i) =>
-                            i === index ? { ...row, medicineId: e.target.value, batchId: '' } : row,
-                          ),
-                        )
-                      }
-                    >
-                      <option value="">{t('warehouse.selectMedicine')}</option>
-                      {(medicines.data?.items ?? [])
-                        .filter((row) => row.isActive)
-                        .map((row) => (
-                          <option key={row.id} value={row.id}>
-                            {row.name}
+                <div key={index} className="space-y-3 rounded-md border p-3">
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div className="grid gap-1">
+                      <Label>{t('table.medicine')}</Label>
+                      <select
+                        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                        value={item.medicineId}
+                        onChange={(e) =>
+                          setItems((prev) =>
+                            prev.map((row, i) =>
+                              i === index
+                                ? {
+                                    ...row,
+                                    medicineId: e.target.value,
+                                    batchId: '',
+                                    packQtys: {},
+                                    qtyMode:
+                                      (medicines.data?.items.find((m) => m.id === e.target.value)
+                                        ?.packLevels?.length ?? 0) > 0
+                                        ? 'packs'
+                                        : 'base',
+                                  }
+                                : row,
+                            ),
+                          )
+                        }
+                      >
+                        <option value="">{t('warehouse.selectMedicine')}</option>
+                        {(medicines.data?.items ?? [])
+                          .filter((row) => row.isActive)
+                          .map((row) => (
+                            <option key={row.id} value={row.id}>
+                              {row.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="grid gap-1">
+                      <Label>{t('table.batch')}</Label>
+                      <select
+                        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                        value={item.batchMode}
+                        onChange={(e) =>
+                          setItems((prev) =>
+                            prev.map((row, i) =>
+                              i === index
+                                ? {
+                                    ...row,
+                                    batchMode: e.target.value as 'existing' | 'new',
+                                    batchId: '',
+                                  }
+                                : row,
+                            ),
+                          )
+                        }
+                      >
+                        <option value="existing">{t('warehouse.existingBatch')}</option>
+                        <option value="new">{t('warehouse.newBatch')}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {item.batchMode === 'existing' ? (
+                    <div className="grid gap-1 md:max-w-md">
+                      <Label>{t('warehouse.selectBatch')}</Label>
+                      <select
+                        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                        value={item.batchId}
+                        onChange={(e) =>
+                          setItems((prev) =>
+                            prev.map((row, i) =>
+                              i === index ? { ...row, batchId: e.target.value } : row,
+                            ),
+                          )
+                        }
+                      >
+                        <option value="">{t('warehouse.selectBatch')}</option>
+                        {medicineBatches(item.medicineId).map((row) => (
+                          <option key={row.id} value={row.id} disabled={isExpired(row.expiryDate)}>
+                            {t('warehouse.batchExp', {
+                              batchNumber: row.batchNumber,
+                              date: row.expiryDate.slice(0, 10),
+                            })}
+                            {isExpired(row.expiryDate) ? t('warehouse.batchExpiredSuffix') : ''}
                           </option>
                         ))}
-                    </select>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label>{t('table.batch')}</Label>
-                    <select
-                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                      value={item.batchId}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((row, i) => (i === index ? { ...row, batchId: e.target.value } : row)),
-                        )
-                      }
-                    >
-                      <option value="">{t('warehouse.selectBatch')}</option>
-                      {medicineBatches(item.medicineId).map((row) => (
-                        <option key={row.id} value={row.id} disabled={isExpired(row.expiryDate)}>
-                          {t('warehouse.batchExp', {
-                            batchNumber: row.batchNumber,
-                            date: row.expiryDate.slice(0, 10),
-                          })}
-                          {isExpired(row.expiryDate) ? t('warehouse.batchExpiredSuffix') : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label>{t('table.quantity')}</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={item.quantity}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((row, i) => (i === index ? { ...row, quantity: e.target.value } : row)),
-                        )
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">{medicine?.unit?.code ?? t('stock.units')}</p>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label>{t('warehouse.unitCostOptional')}</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={item.unitCost}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((row, i) => (i === index ? { ...row, unitCost: e.target.value } : row)),
-                        )
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {t('warehouse.subtotal', { amount: qty * cost })}
-                    </p>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label>{t('table.notes')}</Label>
-                    <Input
-                      value={item.notes}
-                      onChange={(e) =>
-                        setItems((prev) =>
-                          prev.map((row, i) => (i === index ? { ...row, notes: e.target.value } : row)),
-                        )
-                      }
-                    />
-                    {items.length > 1 ? (
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <div className="grid gap-1">
+                        <Label>{t('warehouse.batchNumber')}</Label>
+                        <Input
+                          value={item.batchNumber}
+                          onChange={(e) =>
+                            setItems((prev) =>
+                              prev.map((row, i) =>
+                                i === index ? { ...row, batchNumber: e.target.value } : row,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label>{t('warehouse.manufacturingDate')}</Label>
+                        <Input
+                          type="date"
+                          value={item.manufacturingDate}
+                          onChange={(e) =>
+                            setItems((prev) =>
+                              prev.map((row, i) =>
+                                i === index ? { ...row, manufacturingDate: e.target.value } : row,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label>{t('warehouse.expiryDate')}</Label>
+                        <Input
+                          type="date"
+                          value={item.expiryDate}
+                          onChange={(e) =>
+                            setItems((prev) =>
+                              prev.map((row, i) =>
+                                i === index ? { ...row, expiryDate: e.target.value } : row,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {levels.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
                       <Button
+                        type="button"
                         size="sm"
-                        variant="ghost"
-                        onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
+                        variant={item.qtyMode === 'base' ? 'default' : 'outline'}
+                        onClick={() =>
+                          setItems((prev) =>
+                            prev.map((row, i) => (i === index ? { ...row, qtyMode: 'base' } : row)),
+                          )
+                        }
                       >
-                        {t('actions.remove')}
+                        {t('warehouse.qtyModeBase')}
                       </Button>
-                    ) : null}
-                    {batch && isExpired(batch.expiryDate) ? (
-                      <p className="text-xs text-destructive">{t('warehouse.cannotReceiveExpired')}</p>
-                    ) : null}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={item.qtyMode === 'packs' ? 'default' : 'outline'}
+                        onClick={() =>
+                          setItems((prev) =>
+                            prev.map((row, i) => (i === index ? { ...row, qtyMode: 'packs' } : row)),
+                          )
+                        }
+                      >
+                        {t('warehouse.qtyModePacks')}
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {item.qtyMode === 'packs' && levels.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">{t('warehouse.packQtyHint')}</p>
+                      <div className="grid gap-2 md:grid-cols-3">
+                        {levels.map((level) => (
+                          <div key={level.code} className="grid gap-1">
+                            <Label>
+                              {level.label} (×{level.factorToBase})
+                            </Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={item.packQtys[level.code] ?? ''}
+                              onChange={(e) =>
+                                setItems((prev) =>
+                                  prev.map((row, i) =>
+                                    i === index
+                                      ? {
+                                          ...row,
+                                          packQtys: {
+                                            ...row.packQtys,
+                                            [level.code]: e.target.value,
+                                          },
+                                        }
+                                      : row,
+                                  ),
+                                )
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {t('warehouse.baseUnitsTotal', { qty })}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-1 md:max-w-xs">
+                      <Label>{t('table.quantity')}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={item.quantity}
+                        onChange={(e) =>
+                          setItems((prev) =>
+                            prev.map((row, i) =>
+                              i === index ? { ...row, quantity: e.target.value } : row,
+                            ),
+                          )
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {medicine?.unit?.code ?? t('stock.units')}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div className="grid gap-1">
+                      <Label>{t('warehouse.unitCostOptional')}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={item.unitCost}
+                        onChange={(e) =>
+                          setItems((prev) =>
+                            prev.map((row, i) =>
+                              i === index ? { ...row, unitCost: e.target.value } : row,
+                            ),
+                          )
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('warehouse.subtotal', { amount: qty * cost })}
+                      </p>
+                    </div>
+                    <div className="grid gap-1">
+                      <Label>{t('table.notes')}</Label>
+                      <Input
+                        value={item.notes}
+                        onChange={(e) =>
+                          setItems((prev) =>
+                            prev.map((row, i) =>
+                              i === index ? { ...row, notes: e.target.value } : row,
+                            ),
+                          )
+                        }
+                      />
+                      {items.length > 1 ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
+                        >
+                          {t('actions.remove')}
+                        </Button>
+                      ) : null}
+                      {batch && isExpired(batch.expiryDate) ? (
+                        <p className="text-xs text-destructive">{t('warehouse.cannotReceiveExpired')}</p>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               );

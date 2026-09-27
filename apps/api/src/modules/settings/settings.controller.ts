@@ -34,6 +34,17 @@ class UpdateSettingsDto {
   expiryWarningDays?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  expiryWarningValue?: number;
+
+  @IsOptional()
+  @IsIn(['DAYS', 'WEEKS', 'MONTHS'])
+  expiryWarningUnit?: 'DAYS' | 'WEEKS' | 'MONTHS';
+
+  @IsOptional()
   @IsString()
   @MaxLength(200)
   organizationName?: string;
@@ -112,6 +123,8 @@ export class SettingsController {
       entityId: user.organizationId ?? user.id,
       newValues: {
         expiryWarningDays: body.expiryWarningDays,
+        expiryWarningValue: body.expiryWarningValue,
+        expiryWarningUnit: body.expiryWarningUnit,
         organizationName: body.organizationName,
       },
     });

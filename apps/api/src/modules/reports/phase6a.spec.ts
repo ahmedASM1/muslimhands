@@ -83,6 +83,13 @@ describe('Phase 6A date range', () => {
     expect(range.end.toISOString()).toBe('2026-03-01T23:59:59.999Z');
   });
 
+  it('supports ALL period without clipping to 30 days', () => {
+    const range = parseInclusiveDateRange({ period: 'ALL' });
+    expect(range.label).toBe('all');
+    expect(range.start.toISOString()).toBe('1970-01-01T00:00:00.000Z');
+    expect(range.end.getUTCHours()).toBe(23);
+  });
+
   it('computes days until expiry consistently', () => {
     const today = startOfUtcDay(new Date('2026-03-01T12:00:00Z'));
     expect(daysUntilExpiry(new Date('2026-03-11'), today)).toBe(10);
@@ -174,7 +181,8 @@ describe('ReportsService security + filtering', () => {
     $transaction: jest.fn(),
   };
   const audit = { record: jest.fn() };
-  const service = new ReportsService(prisma as never, audit as never);
+  const settings = { getExpiryWarningDays: jest.fn().mockResolvedValue(90) };
+  const service = new ReportsService(prisma as never, audit as never, settings as never);
 
   beforeEach(() => {
     jest.clearAllMocks();

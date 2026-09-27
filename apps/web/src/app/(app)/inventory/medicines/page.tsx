@@ -37,6 +37,12 @@ interface BatchRow {
   expiryDate: string;
 }
 
+interface PackLevelRow {
+  code: string;
+  label: string;
+  factorToBase: number;
+}
+
 interface MedicineRow {
   id: string;
   name: string;
@@ -56,6 +62,7 @@ interface MedicineRow {
   category?: NamedRef;
   unit?: NamedRef;
   batches?: BatchRow[];
+  packLevels?: PackLevelRow[];
 }
 
 type MedicineForm = {
@@ -128,6 +135,7 @@ export default function MedicinesPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<MedicineRow | null>(null);
   const [selected, setSelected] = useState<MedicineRow | null>(null);
+  const [packLevels, setPackLevels] = useState<PackLevelRow[]>([]);
 
   const path = useMemo(() => {
     const params = new URLSearchParams({
@@ -223,6 +231,14 @@ export default function MedicinesPage() {
         description: values.description || undefined,
         referenceValue: values.referenceValue ? Number(values.referenceValue) : undefined,
         dosageForm: isSupplies ? 'OTHER' : values.dosageForm,
+        packLevels: packLevels
+          .filter((level) => level.code.trim() && level.label.trim() && level.factorToBase >= 1)
+          .map((level, index) => ({
+            code: level.code.trim().toUpperCase(),
+            label: level.label.trim(),
+            factorToBase: Math.floor(Number(level.factorToBase)) || 1,
+            sortOrder: index,
+          })),
       };
       return editing
         ? apiRequest(`/medicines/${editing.id}`, { method: 'PATCH', body })
@@ -236,6 +252,7 @@ export default function MedicinesPage() {
       );
       setOpen(false);
       setEditing(null);
+      setPackLevels([]);
       form.reset({
         name: '',
         genericName: '',
@@ -340,6 +357,7 @@ export default function MedicinesPage() {
 
   function startCreate() {
     setEditing(null);
+    setPackLevels([]);
     form.reset({
       name: '',
       genericName: '',
@@ -360,6 +378,13 @@ export default function MedicinesPage() {
 
   function startEdit(row: MedicineRow) {
     setEditing(row);
+    setPackLevels(
+      (row.packLevels ?? []).map((level) => ({
+        code: level.code,
+        label: level.label,
+        factorToBase: level.factorToBase,
+      })),
+    );
     form.reset({
       name: row.name,
       genericName: row.genericName ?? '',
@@ -718,6 +743,106 @@ export default function MedicinesPage() {
             </div>
           </section>
           <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">{t('inventory.medicines.packaging')}</h2>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const unitName =
+                      (units.data?.items ?? []).find((u) => u.id === form.getValues('unitId'))?.name ??
+                      t('stock.units');
+                    setPackLevels([
+                      { code: 'CARTON', label: 'Carton', factorToBase: 100 },
+                      { code: 'STRIP', label: 'Strip', factorToBase: 10 },
+                      { code: 'BASE', label: unitName, factorToBase: 1 },
+                    ]);
+                  }}
+                >
+                  {t('inventory.medicines.suggestPackLevels')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setPackLevels((prev) => [...prev, { code: '', label: '', factorToBase: 1 }])
+                  }
+                >
+                  {t('inventory.medicines.addPackLevel')}
+                </Button>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">{t('inventory.medicines.packagingHint')}</p>
+            {packLevels.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('inventory.medicines.noPackLevels')}</p>
+            ) : (
+              <div className="space-y-2">
+                {packLevels.map((level, index) => (
+                  <div key={index} className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+                    <div className="space-y-1">
+                      <Label>{t('inventory.medicines.packCode')}</Label>
+                      <Input
+                        value={level.code}
+                        onChange={(e) =>
+                          setPackLevels((prev) =>
+                            prev.map((row, i) =>
+                              i === index ? { ...row, code: e.target.value.toUpperCase() } : row,
+                            ),
+                          )
+                        }
+                        placeholder="CARTON"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>{t('inventory.medicines.packLabel')}</Label>
+                      <Input
+                        value={level.label}
+                        onChange={(e) =>
+                          setPackLevels((prev) =>
+                            prev.map((row, i) =>
+                              i === index ? { ...row, label: e.target.value } : row,
+                            ),
+                          )
+                        }
+                        placeholder="Carton"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>{t('inventory.medicines.packFactor')}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={level.factorToBase}
+                        onChange={(e) =>
+                          setPackLevels((prev) =>
+                            prev.map((row, i) =>
+                              i === index
+                                ? { ...row, factorToBase: Number(e.target.value) || 1 }
+                                : row,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setPackLevels((prev) => prev.filter((_, i) => i !== index))}
+                      >
+                        {t('actions.remove')}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="space-y-3">
             <h2 className="text-sm font-semibold">{t('inventory.medicines.optionalValue')}</h2>
             <div className="space-y-1 md:w-1/2">
               <Label>{t('inventory.medicines.estimatedUnitValue')}</Label>
@@ -760,6 +885,20 @@ export default function MedicinesPage() {
                   <p><strong>{t('inventory.medicines.fields.reorderQuantity')}</strong> {details.data.reorderQuantity}</p>
                   <p><strong>{t('inventory.medicines.fields.estimatedUnitValue')}</strong> {details.data.referenceValue ?? emDash}</p>
                   <p><strong>{t('table.status')}:</strong> {details.data.status}</p>
+                </div>
+                <div>
+                  <h3 className="mb-2 font-medium">{t('inventory.medicines.packaging')}</h3>
+                  {(details.data.packLevels ?? []).length === 0 ? (
+                    <p className="text-muted-foreground">{t('inventory.medicines.noPackLevels')}</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {(details.data.packLevels ?? []).map((level) => (
+                        <li key={level.code}>
+                          {level.label} ({level.code}): 1 = {level.factorToBase} {details.data.unit?.name ?? t('stock.units')}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <div>
                   <h3 className="mb-2 font-medium">{t('inventory.medicines.batchesTitle')}</h3>

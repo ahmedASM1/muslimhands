@@ -7,12 +7,21 @@ import { ResendProvider } from '../../common/mailer/resend.provider';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
+import { leadTimeToDays, normalizeTimeUnit, type TimeUnit } from '../../common/inventory/packaging';
+
 const DEFAULTS = {
   expiryWarningDays: 90,
+  expiryWarningValue: 3,
+  expiryWarningUnit: 'MONTHS' as TimeUnit,
   organizationName: 'Medicine Distribution System',
 };
 
-const ALLOWED_KEYS = new Set(['expiryWarningDays', 'organizationName']);
+const ALLOWED_KEYS = new Set([
+  'expiryWarningDays',
+  'expiryWarningValue',
+  'expiryWarningUnit',
+  'organizationName',
+]);
 
 export type DataPurgeTargets = {
   categories?: boolean;
@@ -45,8 +54,24 @@ export class SettingsService {
     const rows = await this.prisma.appSetting.findMany({
       where: { key: { in: [...ALLOWED_KEYS] } },
     });
-    const stored = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-    return { ...DEFAULTS, ...stored };
+    const stored = Object.fromEntries(rows.map((row) => [row.key, row.value])) as Record<
+      string,
+      unknown
+    >;
+    const merged = { ...DEFAULTS, ...stored };
+
+    // Backward compat: if only legacy days exist, derive value/unit
+    if (stored.expiryWarningValue == null && stored.expiryWarningDays != null) {
+      merged.expiryWarningValue = Number(stored.expiryWarningDays) || DEFAULTS.expiryWarningDays;
+      merged.expiryWarningUnit = 'DAYS';
+    }
+    const days = leadTimeToDays(
+      Number(merged.expiryWarningValue) || DEFAULTS.expiryWarningValue,
+      String(merged.expiryWarningUnit ?? DEFAULTS.expiryWarningUnit),
+    );
+    merged.expiryWarningDays = days > 0 ? days : DEFAULTS.expiryWarningDays;
+    merged.expiryWarningUnit = normalizeTimeUnit(String(merged.expiryWarningUnit));
+    return merged;
   }
 
   async getExpiryWarningDays(): Promise<number> {
@@ -55,16 +80,49 @@ export class SettingsService {
     return Number.isFinite(days) && days > 0 ? days : DEFAULTS.expiryWarningDays;
   }
 
-  async update(values: { expiryWarningDays?: number; organizationName?: string }) {
-    for (const [key, value] of Object.entries(values)) {
-      if (!ALLOWED_KEYS.has(key) || value === undefined) {
-        continue;
+  async update(values: {
+    expiryWarningDays?: number;
+    expiryWarningValue?: number;
+    expiryWarningUnit?: string;
+    organizationName?: string;
+  }) {
+    const payload: Record<string, Prisma.InputJsonValue> = {};
+
+    if (values.organizationName !== undefined) {
+      payload.organizationName = values.organizationName;
+    }
+
+    if (values.expiryWarningValue !== undefined || values.expiryWarningUnit !== undefined) {
+      const current = await this.get();
+      const value =
+        values.expiryWarningValue !== undefined
+          ? Number(values.expiryWarningValue)
+          : Number(current.expiryWarningValue);
+      const unit = normalizeTimeUnit(
+        values.expiryWarningUnit ?? String(current.expiryWarningUnit),
+      );
+      if (!Number.isFinite(value) || value <= 0) {
+        throw new BadRequestException('expiryWarningValue must be greater than 0');
       }
-      const jsonValue = value as Prisma.InputJsonValue;
+      payload.expiryWarningValue = value;
+      payload.expiryWarningUnit = unit;
+      payload.expiryWarningDays = leadTimeToDays(value, unit);
+    } else if (values.expiryWarningDays !== undefined) {
+      const days = Number(values.expiryWarningDays);
+      if (!Number.isFinite(days) || days <= 0) {
+        throw new BadRequestException('expiryWarningDays must be greater than 0');
+      }
+      payload.expiryWarningDays = days;
+      payload.expiryWarningValue = days;
+      payload.expiryWarningUnit = 'DAYS';
+    }
+
+    for (const [key, value] of Object.entries(payload)) {
+      if (!ALLOWED_KEYS.has(key)) continue;
       await this.prisma.appSetting.upsert({
         where: { key },
-        update: { value: jsonValue },
-        create: { key, value: jsonValue },
+        update: { value },
+        create: { key, value },
       });
     }
     return this.get();

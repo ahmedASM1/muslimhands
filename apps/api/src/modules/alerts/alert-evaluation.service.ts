@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 import { RoleCode } from '@mh/shared';
 import { expiryWarningDate } from '../../common/access/access';
+import { leadTimeToDays } from '../../common/inventory/packaging';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SettingsService } from '../settings/settings.service';
@@ -175,7 +176,18 @@ export class AlertEvaluationService {
   async evaluateExpiringSoon() {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const warningDays = await this.settings.getExpiryWarningDays();
+    const orgWarningDays = await this.settings.getExpiryWarningDays();
+
+    const prefs = await this.prisma.notificationPreference.findMany({
+      select: { userId: true, expiryAlertValue: true, expiryAlertUnit: true },
+    });
+    const prefByUser = new Map(prefs.map((p) => [p.userId, p]));
+    const maxPersonalDays = prefs.reduce((max, pref) => {
+      if (pref.expiryAlertValue == null) return max;
+      const days = leadTimeToDays(pref.expiryAlertValue, pref.expiryAlertUnit);
+      return Math.max(max, days);
+    }, 0);
+    const warningDays = Math.max(orgWarningDays, maxPersonalDays || 0);
     const warning = expiryWarningDate(warningDays);
     const conditions: AlertCondition[] = [];
 
@@ -213,10 +225,24 @@ export class AlertEvaluationService {
       { pharmacyScoped: true },
     );
 
+    const daysUntil = (expiry: Date) =>
+      Math.round((startOfDay(expiry).getTime() - today.getTime()) / 86_400_000);
+
+    const recipientWindowDays = (userId: string) => {
+      const pref = prefByUser.get(userId);
+      if (pref?.expiryAlertValue != null) {
+        return leadTimeToDays(pref.expiryAlertValue, pref.expiryAlertUnit);
+      }
+      return orgWarningDays;
+    };
+
     for (const row of whRows) {
-      const days = Math.round(
-        (startOfDay(row.batch.expiryDate).getTime() - today.getTime()) / 86_400_000,
-      );
+      const days = daysUntil(row.batch.expiryDate);
+      const recipients = warehouseRecipients
+        .filter((u) => !u.warehouseId || u.warehouseId === row.warehouseId || u.isSuperAdmin)
+        .filter((u) => days <= recipientWindowDays(u.id))
+        .map((u) => u.id);
+      if (!recipients.length) continue;
       conditions.push({
         dedupeKey: `EXPIRING_SOON:WAREHOUSE:${row.warehouseId}:${row.batchId}`,
         type: NotificationType.EXPIRING_SOON,
@@ -228,16 +254,17 @@ export class AlertEvaluationService {
         locationType: LocationType.WAREHOUSE,
         warehouseId: row.warehouseId,
         href: '/reports/expiry',
-        recipientUserIds: warehouseRecipients
-          .filter((u) => !u.warehouseId || u.warehouseId === row.warehouseId || u.isSuperAdmin)
-          .map((u) => u.id),
+        recipientUserIds: recipients,
       });
     }
 
     for (const row of phRows) {
-      const days = Math.round(
-        (startOfDay(row.batch.expiryDate).getTime() - today.getTime()) / 86_400_000,
-      );
+      const days = daysUntil(row.batch.expiryDate);
+      const recipients = pharmacyRecipients
+        .filter((u) => !u.pharmacyId || u.pharmacyId === row.pharmacyId || u.isSuperAdmin)
+        .filter((u) => days <= recipientWindowDays(u.id))
+        .map((u) => u.id);
+      if (!recipients.length) continue;
       conditions.push({
         dedupeKey: `EXPIRING_SOON:PHARMACY:${row.pharmacyId}:${row.batchId}`,
         type: NotificationType.EXPIRING_SOON,
@@ -249,9 +276,7 @@ export class AlertEvaluationService {
         locationType: LocationType.PHARMACY,
         pharmacyId: row.pharmacyId,
         href: '/reports/expiry',
-        recipientUserIds: pharmacyRecipients
-          .filter((u) => !u.pharmacyId || u.pharmacyId === row.pharmacyId || u.isSuperAdmin)
-          .map((u) => u.id),
+        recipientUserIds: recipients,
       });
     }
 

@@ -190,17 +190,37 @@ export class MailerService {
         email: true,
         firstName: true,
         lastName: true,
-        notificationPreference: { select: { emailEnabled: true, preferredLanguage: true } },
+        notificationPreference: {
+          select: {
+            emailEnabled: true,
+            preferredLanguage: true,
+            emailLowStock: true,
+            emailExpiringSoon: true,
+            emailExpiredStock: true,
+          },
+        },
       },
     });
     if (!user?.email) {
       return { delivered: false, logged: false };
     }
-    if (user.notificationPreference && !user.notificationPreference.emailEnabled) {
+    const pref = user.notificationPreference;
+    if (pref && !pref.emailEnabled) {
       return { delivered: false, logged: false };
     }
+    if (pref) {
+      if (input.type === 'LOW_STOCK' && pref.emailLowStock === false) {
+        return { delivered: false, logged: false };
+      }
+      if (input.type === 'EXPIRING_SOON' && pref.emailExpiringSoon === false) {
+        return { delivered: false, logged: false };
+      }
+      if (input.type === 'EXPIRED_STOCK' && pref.emailExpiredStock === false) {
+        return { delivered: false, logged: false };
+      }
+    }
 
-    const locale = emailLocaleFromPreference(user.notificationPreference?.preferredLanguage);
+    const locale = emailLocaleFromPreference(pref?.preferredLanguage);
     const localized = localizedNotificationCopy(locale, input.type, input.title, input.message);
     const copy = emailCopy(locale);
 

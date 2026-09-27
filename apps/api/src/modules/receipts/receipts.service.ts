@@ -9,6 +9,7 @@ import { Prisma, ReceiptStatus } from '@prisma/client';
 import { IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { InventoryTransactionService } from '../../common/inventory/inventory-transaction.service';
 import { nextDocumentNumber } from '../../common/inventory/document-numbers';
+import { toBaseUnits } from '../../common/inventory/packaging';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -41,7 +42,9 @@ export interface ReceiptItemInput {
   batchNumber?: string;
   manufacturingDate?: string;
   expiryDate?: string;
-  quantity: number;
+  quantity?: number;
+  /** Packaging quantities (cartons/strips/…). Converted to base units when provided. */
+  packEntries?: Array<{ code: string; quantity: number }>;
   unitCost?: number;
   notes?: string;
 }
@@ -91,7 +94,12 @@ export class ReceiptsService {
           warehouse: true,
           createdBy: { select: { firstName: true, lastName: true, email: true } },
           postedBy: { select: { firstName: true, lastName: true, email: true } },
-          items: { include: { medicine: { include: { unit: true } }, batch: true } },
+          items: {
+            include: {
+              medicine: { include: { unit: true, packLevels: { orderBy: { sortOrder: 'asc' } } } },
+              batch: true,
+            },
+          },
         },
       }),
     ]);
@@ -114,7 +122,12 @@ export class ReceiptsService {
         warehouse: true,
         createdBy: { select: { firstName: true, lastName: true, email: true } },
         postedBy: { select: { firstName: true, lastName: true, email: true } },
-        items: { include: { medicine: { include: { unit: true } }, batch: true } },
+        items: {
+          include: {
+            medicine: { include: { unit: true, packLevels: { orderBy: { sortOrder: 'asc' } } } },
+            batch: true,
+          },
+        },
       },
     });
     if (!receipt) {
@@ -329,18 +342,25 @@ export class ReceiptsService {
     receiptId: string,
     item: ReceiptItemInput,
   ) {
-    if (item.quantity <= 0) {
-      throw new BadRequestException('Item quantity must be greater than zero');
-    }
-
     const medicine = await tx.medicine.findFirst({
       where: { id: item.medicineId, deletedAt: null },
+      include: { packLevels: { orderBy: { sortOrder: 'asc' } } },
     });
     if (!medicine) {
       throw new BadRequestException('Medicine not found');
     }
     if (!medicine.isActive) {
       throw new BadRequestException(`Medicine ${medicine.name} is inactive`);
+    }
+
+    let quantity = Number(item.quantity) || 0;
+    let packBreakdown: Prisma.InputJsonValue | undefined;
+    if (item.packEntries?.length) {
+      quantity = toBaseUnits(item.packEntries, medicine.packLevels);
+      packBreakdown = item.packEntries as unknown as Prisma.InputJsonValue;
+    }
+    if (quantity <= 0) {
+      throw new BadRequestException('Item quantity must be greater than zero');
     }
 
     let batchId = item.batchId;
@@ -384,7 +404,8 @@ export class ReceiptsService {
         receiptId,
         medicineId: item.medicineId,
         batchId,
-        quantity: item.quantity,
+        quantity,
+        packBreakdown,
         unitCost: item.unitCost ?? null,
         notes: item.notes?.trim() || null,
       },

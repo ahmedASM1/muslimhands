@@ -35,12 +35,13 @@ function metricTitle(key: string) {
 export default function ReportsHubPage() {
   const { t } = useI18n();
   const { user } = useAuth();
-  const [period, setPeriod] = useState('30D');
+  const [period, setPeriod] = useState('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [customMode, setCustomMode] = useState(false);
 
   const params = new URLSearchParams();
-  if (dateFrom && dateTo) {
+  if (customMode && dateFrom && dateTo) {
     params.set('dateFrom', dateFrom);
     params.set('dateTo', dateTo);
   } else {
@@ -64,25 +65,43 @@ export default function ReportsHubPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {(['TODAY', '7D', '30D'] as const).map((item) => (
+        {(
+          [
+            { id: 'ALL', label: t('reports.scopeAll') },
+            { id: 'TODAY', label: t('reports.scopeCurrent') },
+            { id: '7D', label: t('reports.period7d') },
+            { id: '30D', label: t('reports.period30d') },
+          ] as const
+        ).map((item) => (
           <Button
-            key={item}
-            variant={period === item && !dateFrom ? 'default' : 'outline'}
+            key={item.id}
+            variant={period === item.id && !customMode ? 'default' : 'outline'}
             onClick={() => {
-              setPeriod(item);
+              setPeriod(item.id);
+              setCustomMode(false);
               setDateFrom('');
               setDateTo('');
             }}
           >
-            {item === 'TODAY'
-              ? t('reports.periodToday')
-              : item === '7D'
-                ? t('reports.period7d')
-                : t('reports.period30d')}
+            {item.label}
           </Button>
         ))}
-        <Input type="date" className="max-w-[160px]" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-        <Input type="date" className="max-w-[160px]" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        <Button
+          type="button"
+          variant={customMode ? 'default' : 'outline'}
+          onClick={() => {
+            setCustomMode(true);
+            setPeriod('CUSTOM');
+          }}
+        >
+          {t('reports.scopeCustom')}
+        </Button>
+        {customMode ? (
+          <>
+            <Input type="date" className="max-w-[160px]" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <Input type="date" className="max-w-[160px]" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          </>
+        ) : null}
       </div>
 
       {overview.isLoading ? <p className="text-sm text-muted-foreground">{t('reports.loadingOverview')}</p> : null}

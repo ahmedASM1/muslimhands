@@ -25,12 +25,34 @@ export interface ReportFilterField {
   options?: Array<{ value: string; label: string }>;
 }
 
+type ReportScope = 'all' | 'current' | 'custom';
+
 function buildQuery(params: Record<string, string>) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value) search.set(key, value);
   }
   return search.toString();
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function hasDateRangeFilters(filters: ReportFilterField[]) {
+  const keys = new Set(filters.map((f) => f.key));
+  return (
+    (keys.has('dateFrom') && keys.has('dateTo')) ||
+    (keys.has('registeredFrom') && keys.has('registeredTo'))
+  );
+}
+
+function dateFromKey(filters: ReportFilterField[]) {
+  return filters.some((f) => f.key === 'registeredFrom') ? 'registeredFrom' : 'dateFrom';
+}
+
+function dateToKey(filters: ReportFilterField[]) {
+  return filters.some((f) => f.key === 'registeredTo') ? 'registeredTo' : 'dateTo';
 }
 
 export function ReportPage({
@@ -54,8 +76,15 @@ export function ReportPage({
   const { t } = useI18n();
   const canExport = hasPermission(user, 'report:export') || hasPermission(user, 'reports:export');
   const emDash = t('common.emDash');
+  const supportsScope = hasDateRangeFilters(filters);
+  const fromKey = dateFromKey(filters);
+  const toKey = dateToKey(filters);
+
+  const [scope, setScope] = useState<ReportScope>('all');
   const [values, setValues] = useState<Record<string, string>>({});
-  const [applied, setApplied] = useState<Record<string, string>>({});
+  const [applied, setApplied] = useState<Record<string, string>>(
+    supportsScope ? { period: 'ALL' } : {},
+  );
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -70,6 +99,49 @@ export function ReportPage({
   });
 
   const activeFilters = Object.entries(applied).filter(([, v]) => v);
+
+  const nonDateFilters = filters.filter(
+    (field) => field.key !== fromKey && field.key !== toKey,
+  );
+  const dateFilters = filters.filter(
+    (field) => field.key === fromKey || field.key === toKey,
+  );
+
+  function buildScopedValues(nextScope: ReportScope, nextValues: Record<string, string>) {
+    const base = { ...nextValues };
+    delete base.period;
+    delete base[fromKey];
+    delete base[toKey];
+
+    if (!supportsScope) return nextValues;
+
+    if (nextScope === 'all') {
+      return { ...base, period: 'ALL' };
+    }
+    if (nextScope === 'current') {
+      const today = todayIsoDate();
+      return { ...base, period: 'TODAY', [fromKey]: today, [toKey]: today };
+    }
+    return {
+      ...base,
+      period: 'CUSTOM',
+      [fromKey]: nextValues[fromKey] ?? '',
+      [toKey]: nextValues[toKey] ?? '',
+    };
+  }
+
+  function applyScope(nextScope: ReportScope) {
+    setScope(nextScope);
+    const nextValues =
+      nextScope === 'current'
+        ? { ...values, [fromKey]: todayIsoDate(), [toKey]: todayIsoDate() }
+        : nextScope === 'all'
+          ? { ...values, [fromKey]: '', [toKey]: '' }
+          : values;
+    setValues(nextValues);
+    setPage(1);
+    setApplied(buildScopedValues(nextScope, nextValues));
+  }
 
   async function doExport(format: 'csv' | 'xlsx' | 'pdf') {
     setExportError(null);
@@ -100,8 +172,29 @@ export function ReportPage({
         </Button>
       </div>
 
+      {supportsScope ? (
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              { id: 'all', label: t('reports.scopeAll') },
+              { id: 'current', label: t('reports.scopeCurrent') },
+              { id: 'custom', label: t('reports.scopeCustom') },
+            ] as const
+          ).map((item) => (
+            <Button
+              key={item.id}
+              type="button"
+              variant={scope === item.id ? 'default' : 'outline'}
+              onClick={() => applyScope(item.id)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-2 rounded-lg border p-3">
-        {filters.map((field) =>
+        {nonDateFilters.map((field) =>
           field.type === 'select' ? (
             <select
               key={field.key}
@@ -127,11 +220,35 @@ export function ReportPage({
             />
           ),
         )}
+        {supportsScope && scope === 'custom'
+          ? dateFilters.map((field) => (
+              <Input
+                key={field.key}
+                type="date"
+                placeholder={field.label}
+                className="max-w-[180px]"
+                value={values[field.key] ?? ''}
+                onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+              />
+            ))
+          : null}
+        {!supportsScope
+          ? dateFilters.map((field) => (
+              <Input
+                key={field.key}
+                type="date"
+                placeholder={field.label}
+                className="max-w-[180px]"
+                value={values[field.key] ?? ''}
+                onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+              />
+            ))
+          : null}
         <Button
           type="button"
           onClick={() => {
             setPage(1);
-            setApplied(values);
+            setApplied(buildScopedValues(scope, values));
           }}
         >
           {t('common.apply')}
@@ -141,7 +258,8 @@ export function ReportPage({
           variant="outline"
           onClick={() => {
             setValues({});
-            setApplied({});
+            setScope('all');
+            setApplied(supportsScope ? { period: 'ALL' } : {});
             setPage(1);
           }}
         >

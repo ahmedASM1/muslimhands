@@ -5,6 +5,7 @@ import { IsBooleanString, IsOptional, IsUUID } from 'class-validator';
 import { expiryStatus, expiryWarningDate, resolvePharmacyId } from '../../common/access/access';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 
 export class PharmacyStockQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -34,13 +35,16 @@ export class PharmacyStockQueryDto extends PaginationQueryDto {
 
 @Injectable()
 export class PharmacyStockService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
 
   async list(user: AuthenticatedUser, query: PharmacyStockQueryDto) {
     const pharmacyId = resolvePharmacyId(user, query.pharmacyId);
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
 
     const where: Prisma.PharmacyStockWhereInput = {
       ...(pharmacyId ? { pharmacyId } : {}),
@@ -149,7 +153,7 @@ export class PharmacyStockService {
     const id = resolvePharmacyId(user, pharmacyId);
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const warning = expiryWarningDate(90);
+    const warning = expiryWarningDate(await this.settings.getExpiryWarningDays());
     const where = id ? { pharmacyId: id } : {};
 
     const [aggregate, groups, expiredLines, expiringLines, pendingTransfers] = await Promise.all([

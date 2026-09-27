@@ -14,7 +14,7 @@ export class ReportBaseQueryDto extends PaginationQueryDto {
   @IsString()
   dateTo?: string;
 
-  @ApiPropertyOptional({ enum: ['TODAY', '7D', '30D', 'CUSTOM'] })
+  @ApiPropertyOptional({ enum: ['ALL', 'TODAY', 'CURRENT', '7D', '30D', 'CUSTOM'] })
   @IsOptional()
   @IsString()
   period?: string;

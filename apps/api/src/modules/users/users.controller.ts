@@ -1,15 +1,20 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEmail,
   IsEnum,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { AuditAction, PERMISSIONS } from '@mh/shared';
 import { UserStatus } from '@prisma/client';
@@ -110,6 +115,31 @@ class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsIn(['EN', 'AR'])
   preferredLanguage?: 'EN' | 'AR';
+
+  @IsOptional()
+  @IsBoolean()
+  emailLowStock?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailExpiringSoon?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailExpiredStock?: boolean;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  expiryAlertValue?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsIn(['DAYS', 'WEEKS', 'MONTHS'])
+  expiryAlertUnit?: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
 }
 
 @ApiTags('users')

@@ -4,11 +4,14 @@ import * as path from 'node:path';
 import type { ReportExportPayload } from '../types/report.types';
 import { EXPORT_BRAND, formatExportDate, formatExportTimestamp } from './export-brand';
 
-function resolveArabicFont(): string | null {
+const ARABIC_CHAR = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+const LATIN_LETTER = /[A-Za-z]/;
+
+function resolveAsset(...parts: string[]): string | null {
   const candidates = [
-    path.join(__dirname, '..', '..', '..', '..', 'assets', 'fonts', 'NotoSansArabic-Regular.ttf'),
-    path.join(process.cwd(), 'assets', 'fonts', 'NotoSansArabic-Regular.ttf'),
-    path.join(process.cwd(), 'apps', 'api', 'assets', 'fonts', 'NotoSansArabic-Regular.ttf'),
+    path.join(__dirname, '..', '..', '..', '..', 'assets', ...parts),
+    path.join(process.cwd(), 'assets', ...parts),
+    path.join(process.cwd(), 'apps', 'api', 'assets', ...parts),
   ];
   for (const file of candidates) {
     if (fs.existsSync(file)) return file;
@@ -33,9 +36,104 @@ function columnWidths(payload: ReportExportPayload, usableWidth: number): number
   return weights.map((w) => (w / total) * usableWidth);
 }
 
+type FontPair = { latin: string; arabic: string | null };
+
+function splitScriptRuns(text: string): Array<{ text: string; arabic: boolean }> {
+  const runs: Array<{ text: string; arabic: boolean }> = [];
+  let buf = '';
+  let arabic: boolean | null = null;
+
+  for (const ch of text) {
+    const isArabic = ARABIC_CHAR.test(ch);
+    const isLatin = LATIN_LETTER.test(ch);
+    const next: boolean | null =
+      isArabic ? true : isLatin ? false : arabic;
+
+    if (arabic === null) {
+      arabic = isArabic;
+      buf = ch;
+      continue;
+    }
+
+    if (next === null || next === arabic) {
+      buf += ch;
+      continue;
+    }
+
+    runs.push({ text: buf, arabic });
+    buf = ch;
+    arabic = next;
+  }
+
+  if (buf) runs.push({ text: buf, arabic: arabic ?? false });
+  return runs.length ? runs : [{ text, arabic: false }];
+}
+
+function drawText(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  x: number,
+  y: number,
+  fonts: FontPair,
+  options: {
+    width: number;
+    height?: number;
+    align?: 'left' | 'center' | 'right';
+    lineBreak?: boolean;
+    ellipsis?: boolean;
+  },
+) {
+  const hasArabic = Boolean(fonts.arabic && ARABIC_CHAR.test(text));
+  if (!hasArabic || !fonts.arabic) {
+    doc.font(fonts.latin);
+    doc.text(text, x, y, {
+      width: options.width,
+      height: options.height,
+      align: options.align,
+      lineBreak: options.lineBreak ?? false,
+      ellipsis: options.ellipsis,
+    });
+    return;
+  }
+
+  const runs = splitScriptRuns(text);
+  const hasLatinLetters = runs.some((run) => !run.arabic && LATIN_LETTER.test(run.text));
+
+  // Pure Arabic (plus digits/punctuation): one font, reliable layout.
+  if (!hasLatinLetters) {
+    doc.font(fonts.arabic);
+    doc.text(text, x, y, {
+      width: options.width,
+      height: options.height,
+      align: options.align,
+      lineBreak: options.lineBreak ?? false,
+      ellipsis: options.ellipsis,
+    });
+    return;
+  }
+
+  // Mixed scripts: switch fonts per run so Latin is not drawn with Arabic-only glyphs.
+  runs.forEach((run, index) => {
+    const last = index === runs.length - 1;
+    doc.font(run.arabic ? fonts.arabic! : fonts.latin);
+    if (index === 0) {
+      doc.text(run.text, x, y, {
+        width: options.width,
+        height: options.height,
+        align: options.align,
+        lineBreak: false,
+        continued: !last,
+      });
+    } else {
+      doc.text(run.text, { lineBreak: false, continued: !last });
+    }
+  });
+}
+
 /** Professional branded landscape PDF for catalog and operational reports. */
 export async function exportPdf(payload: ReportExportPayload): Promise<Buffer> {
-  const fontPath = resolveArabicFont();
+  const arabicFontPath = resolveAsset('fonts', 'NotoSansArabic-Regular.ttf');
+  const logoPath = resolveAsset('brand', 'muslimhands-logo.png');
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -56,14 +154,15 @@ export async function exportPdf(payload: ReportExportPayload): Promise<Buffer> {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const fontRegular = fontPath ? 'ReportFont' : 'Helvetica';
-    const fontBold = fontPath ? 'ReportFont' : 'Helvetica-Bold';
-    if (fontPath) {
-      doc.registerFont('ReportFont', fontPath);
-      doc.font('ReportFont');
-    } else {
-      doc.font('Helvetica');
+    // Helvetica for Latin (Noto Sans Arabic has no Latin letters — that caused □□□ boxes).
+    const fonts: FontPair = {
+      latin: 'Helvetica',
+      arabic: arabicFontPath ? 'ReportArabic' : null,
+    };
+    if (arabicFontPath) {
+      doc.registerFont('ReportArabic', arabicFontPath);
     }
+    doc.font(fonts.latin);
 
     const pageWidth = doc.page.width;
     const pageHeight = doc.page.height;
@@ -73,65 +172,90 @@ export async function exportPdf(payload: ReportExportPayload): Promise<Buffer> {
     const startX = marginLeft;
     const widths = columnWidths(payload, usableWidth);
     const bottomLimit = pageHeight - 36;
+    const headerHeight = logoPath ? 56 : 48;
+    const logoSize = 40;
 
     const drawPageChrome = () => {
-      // Top brand bar
       doc.save();
-      doc.rect(0, 0, pageWidth, 48).fill(EXPORT_BRAND.primary);
-      doc.rect(0, 48, pageWidth, 3).fill(EXPORT_BRAND.accent);
+      doc.rect(0, 0, pageWidth, headerHeight).fill(EXPORT_BRAND.primary);
+      doc.rect(0, headerHeight, pageWidth, 3).fill(EXPORT_BRAND.accent);
       doc.restore();
 
-      doc.fillColor(EXPORT_BRAND.white).fontSize(8).font(fontBold);
-      doc.text(EXPORT_BRAND.name.toUpperCase(), startX, 10, { width: usableWidth * 0.55 });
+      let textX = startX;
+      if (logoPath) {
+        try {
+          doc.image(logoPath, startX, 8, {
+            width: logoSize,
+            height: logoSize,
+            fit: [logoSize, logoSize],
+          });
+          textX = startX + logoSize + 10;
+        } catch {
+          // Logo optional — continue without it if image decode fails.
+        }
+      }
 
-      doc.fontSize(11).font(fontBold);
-      doc.text(payload.title, startX, 22, { width: usableWidth * 0.7, lineBreak: false });
+      const titleWidth = usableWidth * 0.62 - (textX - startX);
+      doc.fillColor(EXPORT_BRAND.white).fontSize(8);
+      drawText(doc, EXPORT_BRAND.name.toUpperCase(), textX, 10, fonts, {
+        width: titleWidth,
+        lineBreak: false,
+      });
 
-      doc.fontSize(8).font(fontRegular).fillColor('#D1FAE5');
-      doc.text(formatExportDate(payload.generatedAt), startX + usableWidth * 0.72, 14, {
+      doc.fontSize(11);
+      drawText(doc, payload.title, textX, 24, fonts, {
+        width: titleWidth,
+        lineBreak: false,
+      });
+
+      doc.fontSize(8).fillColor('#D1FAE5');
+      drawText(doc, formatExportDate(payload.generatedAt), startX + usableWidth * 0.72, 14, fonts, {
         width: usableWidth * 0.28,
         align: 'right',
+        lineBreak: false,
       });
-      doc.text(`${payload.rows.length} records`, startX + usableWidth * 0.72, 28, {
+      drawText(doc, `${payload.rows.length} records`, startX + usableWidth * 0.72, 28, fonts, {
         width: usableWidth * 0.28,
         align: 'right',
+        lineBreak: false,
       });
 
-      // Meta strip
-      doc.y = 58;
+      const metaY = headerHeight + 8;
       doc.save();
-      doc.rect(startX, 56, usableWidth, 18).fill(EXPORT_BRAND.primarySoft);
+      doc.rect(startX, metaY, usableWidth, 18).fill(EXPORT_BRAND.primarySoft);
       doc.restore();
-      doc.fillColor(EXPORT_BRAND.muted).fontSize(7.5).font(fontRegular);
-      doc.text(
+      doc.fillColor(EXPORT_BRAND.muted).fontSize(7.5);
+      drawText(
+        doc,
         `${EXPORT_BRAND.system}  ·  Generated ${formatExportTimestamp(payload.generatedAt)}  ·  Filters: ${payload.filterSummary || 'none'}`,
         startX + 6,
-        61,
+        metaY + 5,
+        fonts,
         { width: usableWidth - 12, lineBreak: false },
       );
-      doc.y = 82;
+      doc.y = metaY + 26;
       doc.fillColor(EXPORT_BRAND.text);
     };
 
     const drawTableHeader = () => {
       const y = doc.y;
-      const headerHeight = 16;
+      const rowH = 16;
       doc.save();
-      doc.rect(startX, y, usableWidth, headerHeight).fill(EXPORT_BRAND.primary);
+      doc.rect(startX, y, usableWidth, rowH).fill(EXPORT_BRAND.primary);
       doc.restore();
 
       let x = startX;
-      doc.fillColor(EXPORT_BRAND.white).fontSize(7).font(fontBold);
+      doc.fillColor(EXPORT_BRAND.white).fontSize(7);
       payload.columns.forEach((col, index) => {
-        doc.text(col.header, x + 3, y + 4, {
+        drawText(doc, col.header, x + 3, y + 4, fonts, {
           width: widths[index]! - 6,
           lineBreak: false,
           ellipsis: true,
         });
         x += widths[index]!;
       });
-      doc.y = y + headerHeight + 2;
-      doc.fillColor(EXPORT_BRAND.text).font(fontRegular);
+      doc.y = y + rowH + 2;
+      doc.fillColor(EXPORT_BRAND.text);
     };
 
     drawPageChrome();
@@ -142,10 +266,12 @@ export async function exportPdf(payload: ReportExportPayload): Promise<Buffer> {
       : [Object.fromEntries(payload.columns.map((c) => [c.key, '—']))];
 
     rows.forEach((row, index) => {
-      // Measure row height first
       let maxHeight = 12;
       payload.columns.forEach((col, colIndex) => {
         const text = cellText(row[col.key]);
+        const fontName =
+          fonts.arabic && ARABIC_CHAR.test(text) ? fonts.arabic : fonts.latin;
+        doc.font(fontName).fontSize(6.5);
         const height = doc.heightOfString(text, { width: widths[colIndex]! - 6 });
         maxHeight = Math.max(maxHeight, Math.min(height, 42));
       });
@@ -153,7 +279,7 @@ export async function exportPdf(payload: ReportExportPayload): Promise<Buffer> {
 
       if (doc.y + rowHeight > bottomLimit) {
         doc.addPage();
-        if (fontPath) doc.font('ReportFont');
+        doc.font(fonts.latin);
         drawPageChrome();
         drawTableHeader();
       }
@@ -165,7 +291,6 @@ export async function exportPdf(payload: ReportExportPayload): Promise<Buffer> {
         doc.restore();
       }
 
-      // subtle bottom rule
       doc
         .moveTo(startX, y + rowHeight)
         .lineTo(startX + usableWidth, y + rowHeight)
@@ -174,9 +299,9 @@ export async function exportPdf(payload: ReportExportPayload): Promise<Buffer> {
         .stroke();
 
       let x = startX;
-      doc.fillColor(EXPORT_BRAND.text).fontSize(6.5).font(fontRegular);
+      doc.fillColor(EXPORT_BRAND.text).fontSize(6.5);
       payload.columns.forEach((col, colIndex) => {
-        doc.text(cellText(row[col.key]), x + 3, y + 3, {
+        drawText(doc, cellText(row[col.key]), x + 3, y + 3, fonts, {
           width: widths[colIndex]! - 6,
           height: rowHeight - 4,
           ellipsis: true,
@@ -189,30 +314,28 @@ export async function exportPdf(payload: ReportExportPayload): Promise<Buffer> {
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.start + range.count; i += 1) {
       doc.switchToPage(i);
-      // Footer bar
       doc.save();
       doc.rect(0, pageHeight - 22, pageWidth, 22).fill('#F8FAFC');
       doc.restore();
-      doc
-        .fontSize(7)
-        .fillColor(EXPORT_BRAND.muted)
-        .font(fontRegular)
-        .text(EXPORT_BRAND.confidential, 32, pageHeight - 15, {
-          width: usableWidth * 0.45,
-          align: 'left',
-          lineBreak: false,
-        })
-        .text(
-          `Page ${i - range.start + 1} of ${range.count}`,
-          32 + usableWidth * 0.45,
-          pageHeight - 15,
-          { width: usableWidth * 0.2, align: 'center', lineBreak: false },
-        )
-        .text(payload.reportType, 32 + usableWidth * 0.65, pageHeight - 15, {
-          width: usableWidth * 0.35,
-          align: 'right',
-          lineBreak: false,
-        });
+      doc.fontSize(7).fillColor(EXPORT_BRAND.muted);
+      drawText(doc, EXPORT_BRAND.confidential, 32, pageHeight - 15, fonts, {
+        width: usableWidth * 0.45,
+        align: 'left',
+        lineBreak: false,
+      });
+      drawText(
+        doc,
+        `Page ${i - range.start + 1} of ${range.count}`,
+        32 + usableWidth * 0.45,
+        pageHeight - 15,
+        fonts,
+        { width: usableWidth * 0.2, align: 'center', lineBreak: false },
+      );
+      drawText(doc, payload.reportType, 32 + usableWidth * 0.65, pageHeight - 15, fonts, {
+        width: usableWidth * 0.35,
+        align: 'right',
+        lineBreak: false,
+      });
     }
 
     doc.end();

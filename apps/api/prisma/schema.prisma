@@ -451,6 +451,7 @@ model Medicine {
   transferItems   StockTransferItem[]
   dispensingItems DispensingItem[]
   stockMovements  StockMovement[]
+  packLevels      MedicinePackLevel[]
 
   @@index([categoryId])
   @@index([unitId])
@@ -461,6 +462,25 @@ model Medicine {
   @@index([isActive])
   @@index([deletedAt])
   @@map("medicines")
+}
+
+/// Packaging hierarchy for a catalog item (e.g. CARTON → STRIP → TABLET).
+/// factorToBase = how many of Medicine.unit (base) are in one unit of this level.
+model MedicinePackLevel {
+  id           String   @id @default(uuid()) @db.Uuid
+  medicineId   String   @map("medicine_id") @db.Uuid
+  code         String
+  label        String
+  factorToBase Int      @map("factor_to_base")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  medicine Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+
+  @@unique([medicineId, code])
+  @@index([medicineId])
+  @@map("medicine_pack_levels")
 }
 
 model MedicineBatch {
@@ -619,15 +639,17 @@ model StockReceipt {
 }
 
 model StockReceiptItem {
-  id         String   @id @default(uuid()) @db.Uuid
-  receiptId  String   @map("receipt_id") @db.Uuid
-  medicineId String   @map("medicine_id") @db.Uuid
-  batchId    String   @map("batch_id") @db.Uuid
-  quantity   Int
-  unitCost   Decimal? @map("unit_cost") @db.Decimal(12, 4)
-  notes      String?
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id            String   @id @default(uuid()) @db.Uuid
+  receiptId     String   @map("receipt_id") @db.Uuid
+  medicineId    String   @map("medicine_id") @db.Uuid
+  batchId       String   @map("batch_id") @db.Uuid
+  quantity      Int
+  /// Optional packaging breakdown used when entering stock (cartons/strips/etc.)
+  packBreakdown Json?    @map("pack_breakdown")
+  unitCost      Decimal? @map("unit_cost") @db.Decimal(12, 4)
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   receipt  StockReceipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   medicine Medicine      @relation(fields: [medicineId], references: [id])
@@ -959,6 +981,13 @@ model NotificationPreference {
   emailEnabled      Boolean           @default(true) @map("email_enabled")
   inAppEnabled      Boolean           @default(true) @map("in_app_enabled")
   preferredLanguage PreferredLanguage @default(EN) @map("preferred_language")
+  /// Per-alert email toggles (still require emailEnabled=true)
+  emailLowStock     Boolean           @default(true) @map("email_low_stock")
+  emailExpiringSoon Boolean           @default(true) @map("email_expiring_soon")
+  emailExpiredStock Boolean           @default(true) @map("email_expired_stock")
+  /// Personal expiry lead time; null = use organization default
+  expiryAlertValue  Int?              @map("expiry_alert_value")
+  expiryAlertUnit   String?           @map("expiry_alert_unit") // DAYS | WEEKS | MONTHS
   createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
 
