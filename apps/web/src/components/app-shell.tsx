@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LogOut, Menu, Search, X } from 'lucide-react';
+import { Menu, Search, X } from 'lucide-react';
 import { filterNav, isNavItemActive, navIconFor, navigationFor } from '@/config/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/utils';
@@ -14,48 +14,23 @@ import { NotificationBell } from '@/components/notification-bell';
 import { LanguageSwitcher } from '@/i18n/language-switcher';
 import { useI18n } from '@/i18n/locale-context';
 import { Skeleton } from '@/components/skeleton';
-import type { AuthenticatedUser } from '@mh/shared';
 import type { NavSection } from '@/config/navigation';
 
 const SIDEBAR_GRADIENT =
   'linear-gradient(180deg, hsl(var(--sidebar-deep)) 0%, hsl(var(--sidebar)) 42%, hsl(var(--sidebar-bright)) 100%)';
 
-function userInitials(user: {
-  firstName?: string | null;
-  lastName?: string | null;
-  name?: string | null;
-  email?: string;
-}) {
-  const first = user.firstName?.trim()?.[0];
-  const last = user.lastName?.trim()?.[0];
-  if (first && last) return `${first}${last}`.toUpperCase();
-  const name = (user.name || user.email || 'U').trim();
-  const parts = name.split(/\s+/);
-  if (parts.length >= 2) return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
-
 function SidebarPanel({
   sections,
   pathname,
-  user,
-  onLogout,
   showClose,
   onClose,
 }: {
   sections: NavSection[];
   pathname: string;
-  user: AuthenticatedUser;
-  onLogout: () => void;
   showClose?: boolean;
   onClose?: () => void;
 }) {
   const { t } = useI18n();
-  const displayName = user.name || `${user.firstName} ${user.lastName}`.trim();
-  const rawRole = user.role ?? user.roles[0] ?? 'User';
-  const roleLabel = t(`roles.${rawRole}`) !== `roles.${rawRole}` ? t(`roles.${rawRole}`) : rawRole.replaceAll('_', ' ');
-  const contextLabel = user.pharmacy?.name ?? user.warehouse?.name ?? user.pharmacySlug ?? null;
-  const initials = userInitials(user);
 
   return (
     <>
@@ -128,35 +103,6 @@ function SidebarPanel({
           </div>
         ))}
       </nav>
-
-      <div className="shrink-0 border-t border-white/15 p-3">
-        <Link
-          href="/profile"
-          className="flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
-        >
-          <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20 text-sm font-semibold text-white"
-            aria-hidden="true"
-          >
-            {initials}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">{displayName}</p>
-            <p className="truncate text-xs text-sidebar-muted">
-              {roleLabel}
-              {contextLabel ? ` · ${contextLabel}` : ''}
-            </p>
-          </div>
-        </Link>
-        <Button
-          variant="ghost"
-          className="mt-1 w-full justify-start gap-2 text-white/90 hover:bg-white/10 hover:text-white"
-          onClick={onLogout}
-        >
-          <LogOut className="h-4 w-4" aria-hidden="true" />
-          {t('common.signOut')}
-        </Button>
-      </div>
     </>
   );
 }
@@ -164,7 +110,7 @@ function SidebarPanel({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
   const { t } = useI18n();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -213,13 +159,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const sections = filterNav(navigationFor(user), user);
 
-  function handleLogout() {
-    const pharmacySlug = user?.pharmacySlug;
-    void Promise.resolve(logout()).then(() =>
-      router.replace(pharmacySlug ? `/pharmacies/${pharmacySlug}/login` : '/login'),
-    );
-  }
-
   return (
     <div className="app-shell h-dvh overflow-hidden bg-background md:ps-[15rem]">
       <aside
@@ -227,7 +166,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ background: SIDEBAR_GRADIENT }}
         aria-label={t('nav.primary')}
       >
-        <SidebarPanel sections={sections} pathname={pathname} user={user} onLogout={handleLogout} />
+        <SidebarPanel sections={sections} pathname={pathname} />
       </aside>
 
       {mobileOpen ? (
@@ -245,8 +184,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <SidebarPanel
               sections={sections}
               pathname={pathname}
-              user={user}
-              onLogout={handleLogout}
               showClose
               onClose={() => setMobileOpen(false)}
             />
