@@ -25,8 +25,11 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api ./apps/api
 COPY --from=builder /app/packages/shared ./packages/shared
 
+# Regenerate Prisma client for this image's OpenSSL (debian 3.x)
+RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
+
 EXPOSE 8080
 CMD ["sh", "-c", "npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && node apps/api/dist/main.js"]
 
-# Seed admin (run from Railway Console after deploy):
-#   node --import tsx apps/api/prisma/seed.ts
+# Seed admin (Railway Console, after deploy):
+#   cd apps/api && node --import tsx prisma/seed.ts
