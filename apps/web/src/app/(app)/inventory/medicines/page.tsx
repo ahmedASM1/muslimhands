@@ -59,6 +59,8 @@ interface MedicineRow {
   importMetadata?: Record<string, string> | null;
   status: string;
   isActive: boolean;
+  expiryAlertValue?: number | null;
+  expiryAlertUnit?: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
   category?: NamedRef;
   unit?: NamedRef;
   batches?: BatchRow[];
@@ -82,6 +84,8 @@ type MedicineForm = {
   batchNumber?: string;
   manufacturingDate?: string;
   expiryDate?: string;
+  expiryAlertValue?: number;
+  expiryAlertUnit?: 'DAYS' | 'WEEKS' | 'MONTHS';
 };
 
 function needsStrength(dosageForm: string, itemType?: string | null) {
@@ -128,6 +132,8 @@ export default function MedicinesPage() {
         batchNumber: z.string().optional(),
         manufacturingDate: z.string().optional(),
         expiryDate: z.string().optional(),
+        expiryAlertValue: z.coerce.number().min(1, t('inventory.medicines.validation.expiryAlertValue')),
+        expiryAlertUnit: z.enum(['DAYS', 'WEEKS', 'MONTHS']),
       }),
     [t],
   );
@@ -195,6 +201,8 @@ export default function MedicinesPage() {
       batchNumber: '',
       manufacturingDate: '',
       expiryDate: '',
+      expiryAlertValue: 3,
+      expiryAlertUnit: 'MONTHS',
     },
   });
 
@@ -258,6 +266,8 @@ export default function MedicinesPage() {
         description: values.description || undefined,
         referenceValue: values.referenceValue ? Number(values.referenceValue) : undefined,
         dosageForm: isSupplies ? 'OTHER' : values.dosageForm,
+        expiryAlertValue: Number(values.expiryAlertValue) || 3,
+        expiryAlertUnit: values.expiryAlertUnit || 'MONTHS',
         packLevels: packLevels
           .filter((level) => level.code.trim() && level.label.trim() && level.factorToBase >= 1)
           .map((level, index) => ({
@@ -304,6 +314,8 @@ export default function MedicinesPage() {
         batchNumber: '',
         manufacturingDate: '',
         expiryDate: '',
+        expiryAlertValue: 3,
+        expiryAlertUnit: 'MONTHS',
       });
       client.invalidateQueries({ queryKey: ['medicines'] });
       client.invalidateQueries({ queryKey: ['batches'] });
@@ -413,6 +425,8 @@ export default function MedicinesPage() {
       batchNumber: '',
       manufacturingDate: '',
       expiryDate: '',
+      expiryAlertValue: 3,
+      expiryAlertUnit: 'MONTHS',
     });
     setOpen(true);
   }
@@ -443,6 +457,8 @@ export default function MedicinesPage() {
       batchNumber: '',
       manufacturingDate: '',
       expiryDate: '',
+      expiryAlertValue: row.expiryAlertValue ?? 3,
+      expiryAlertUnit: row.expiryAlertUnit ?? 'MONTHS',
     });
     setOpen(true);
   }
@@ -787,10 +803,10 @@ export default function MedicinesPage() {
               </div>
             </div>
           </section>
-          {!editing ? (
-            <section className="space-y-3">
-              <h2 className="text-sm font-semibold">{t('inventory.medicines.expirySection')}</h2>
-              <p className="text-xs text-muted-foreground">{t('inventory.medicines.expirySectionHint')}</p>
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold">{t('inventory.medicines.expirySection')}</h2>
+            <p className="text-xs text-muted-foreground">{t('inventory.medicines.expirySectionHint')}</p>
+            {!editing ? (
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-1">
                   <Label>{t('table.batchNumber')} *</Label>
@@ -805,12 +821,30 @@ export default function MedicinesPage() {
                   <Input type="date" {...form.register('expiryDate')} />
                 </div>
               </div>
-            </section>
-          ) : (
-            <section className="space-y-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
-              {t('inventory.medicines.manageBatchesHint')}
-            </section>
-          )}
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('inventory.medicines.manageBatchesHint')}</p>
+            )}
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label>{t('inventory.medicines.expiryAlertLead')} *</Label>
+                <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
+                  <Input type="number" min={1} {...form.register('expiryAlertValue')} />
+                  <select
+                    className="h-10 w-full rounded-md border px-3 text-sm"
+                    {...form.register('expiryAlertUnit')}
+                  >
+                    <option value="DAYS">{t('profile.timeUnitDays')}</option>
+                    <option value="WEEKS">{t('profile.timeUnitWeeks')}</option>
+                    <option value="MONTHS">{t('profile.timeUnitMonths')}</option>
+                  </select>
+                </div>
+                <p className="text-xs text-muted-foreground">{t('inventory.medicines.expiryAlertLeadHint')}</p>
+                {form.formState.errors.expiryAlertValue ? (
+                  <p className="text-sm text-destructive">{form.formState.errors.expiryAlertValue.message}</p>
+                ) : null}
+              </div>
+            </div>
+          </section>
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold">{t('inventory.medicines.packaging')}</h2>

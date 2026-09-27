@@ -145,6 +145,8 @@ export class MedicinesService {
       description?: string;
       importMetadata?: Record<string, string> | null;
       packLevels?: PackLevelInput[];
+      expiryAlertValue?: number | null;
+      expiryAlertUnit?: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
       initialBatch?: {
         batchNumber: string;
         manufacturingDate?: string;
@@ -162,6 +164,7 @@ export class MedicinesService {
       await this.assertUniqueBarcode(barcode);
     }
     const packLevels = this.normalizePackLevels(data.packLevels);
+    const expiryLead = this.normalizeExpiryLead(data.expiryAlertValue, data.expiryAlertUnit);
 
     let initialBatchData: {
       batchNumber: string;
@@ -201,6 +204,8 @@ export class MedicinesService {
           barcode,
           minimumStock: data.minimumStock,
           reorderQuantity: data.reorderQuantity,
+          expiryAlertValue: expiryLead.value,
+          expiryAlertUnit: expiryLead.unit,
           referenceValue: data.referenceValue ?? null,
           description: data.description?.trim() || null,
           importMetadata: data.importMetadata ?? undefined,
@@ -256,6 +261,8 @@ export class MedicinesService {
       isActive?: boolean;
       importMetadata?: Record<string, string> | null;
       packLevels?: PackLevelInput[];
+      expiryAlertValue?: number | null;
+      expiryAlertUnit?: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
     },
     userId: string,
   ) {
@@ -292,6 +299,14 @@ export class MedicinesService {
     const packLevels =
       data.packLevels === undefined ? undefined : this.normalizePackLevels(data.packLevels);
 
+    const expiryLead =
+      data.expiryAlertValue !== undefined || data.expiryAlertUnit !== undefined
+        ? this.normalizeExpiryLead(
+            data.expiryAlertValue !== undefined ? data.expiryAlertValue : existing.expiryAlertValue,
+            data.expiryAlertUnit !== undefined ? data.expiryAlertUnit : existing.expiryAlertUnit,
+          )
+        : undefined;
+
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.medicine.update({
         where: { id },
@@ -311,6 +326,9 @@ export class MedicinesService {
           description: data.description?.trim(),
           isActive: data.isActive,
           importMetadata: mergedMetadata === undefined ? undefined : mergedMetadata,
+          ...(expiryLead
+            ? { expiryAlertValue: expiryLead.value, expiryAlertUnit: expiryLead.unit }
+            : {}),
         },
       });
       if (packLevels !== undefined) {
@@ -330,6 +348,24 @@ export class MedicinesService {
       newValues: data as object,
     });
     return this.withStatus(updated);
+  }
+
+  private normalizeExpiryLead(
+    value?: number | null,
+    unit?: string | null,
+  ): { value: number | null; unit: string | null } {
+    if (value == null) {
+      return { value: null, unit: null };
+    }
+    const amount = Math.floor(Number(value));
+    if (!Number.isFinite(amount) || amount < 1) {
+      throw new BadRequestException('expiryAlertValue must be >= 1');
+    }
+    const normalized = String(unit ?? 'DAYS').trim().toUpperCase();
+    if (normalized !== 'DAYS' && normalized !== 'WEEKS' && normalized !== 'MONTHS') {
+      throw new BadRequestException('expiryAlertUnit must be DAYS, WEEKS, or MONTHS');
+    }
+    return { value: amount, unit: normalized };
   }
 
   private normalizePackLevels(raw?: PackLevelInput[] | null): PackLevelInput[] {

@@ -1114,6 +1114,8 @@
       "lowStockThresholdHint": "Send a low-stock alert when on-hand quantity reaches this amount (in base units).",
       "expirySection": "Manufacturing & expiry",
       "expirySectionHint": "Required when adding a medicine or medical supply. Creates the first batch used for expiry alerts.",
+      "expiryAlertLead": "Alert before expiry",
+      "expiryAlertLeadHint": "When to send soon-expiring alerts for this item (e.g. 2 weeks, 1 month, 3 months).",
       "manageBatchesHint": "To change manufacturing/expiry dates, use Inventory → Batches or add dates when receiving stock.",
       "packaging": "Packaging hierarchy",
       "packagingHint": "Define how cartons, strips, boxes, etc. convert to the base unit (e.g. 1 carton = 100 tablets). Used when receiving stock.",
@@ -1152,7 +1154,8 @@
         "batchNumberRequired": "Batch number is required",
         "manufacturingDateRequired": "Manufacturing date is required",
         "expiryDateRequired": "Expiry date is required",
-        "expiryAfterMfg": "Expiry date must be after manufacturing date"
+        "expiryAfterMfg": "Expiry date must be after manufacturing date",
+        "expiryAlertValue": "Alert lead time must be at least 1"
       },
       "fields": {
         "medicine": "Medicine:",

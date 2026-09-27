@@ -432,6 +432,9 @@ model Medicine {
   barcode         String?    @unique
   minimumStock    Int        @default(0) @map("minimum_stock")
   reorderQuantity Int        @default(0) @map("reorder_quantity")
+  /// Per-item lead time for EXPIRING_SOON alerts; null = organization default
+  expiryAlertValue Int?      @map("expiry_alert_value")
+  expiryAlertUnit  String?   @map("expiry_alert_unit") // DAYS | WEEKS | MONTHS
   referenceValue  Decimal?   @map("reference_value") @db.Decimal(12, 4)
   description     String?
   /// Extra columns captured from spreadsheet imports (stock movement sheets, custom fields)

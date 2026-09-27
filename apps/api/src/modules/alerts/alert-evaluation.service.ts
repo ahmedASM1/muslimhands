@@ -187,7 +187,17 @@ export class AlertEvaluationService {
       const days = leadTimeToDays(pref.expiryAlertValue, pref.expiryAlertUnit);
       return Math.max(max, days);
     }, 0);
-    const warningDays = Math.max(orgWarningDays, maxPersonalDays || 0);
+
+    const medicinesWithLead = await this.prisma.medicine.findMany({
+      where: { deletedAt: null, expiryAlertValue: { not: null } },
+      select: { expiryAlertValue: true, expiryAlertUnit: true },
+    });
+    const maxItemDays = medicinesWithLead.reduce((max, med) => {
+      if (med.expiryAlertValue == null) return max;
+      return Math.max(max, leadTimeToDays(med.expiryAlertValue, med.expiryAlertUnit));
+    }, 0);
+
+    const warningDays = Math.max(orgWarningDays, maxPersonalDays || 0, maxItemDays || 0);
     const warning = expiryWarningDate(warningDays);
     const conditions: AlertCondition[] = [];
 
@@ -198,7 +208,14 @@ export class AlertEvaluationService {
           batch: { expiryDate: { gte: today, lte: warning } },
         },
         include: {
-          medicine: { select: { id: true, name: true } },
+          medicine: {
+            select: {
+              id: true,
+              name: true,
+              expiryAlertValue: true,
+              expiryAlertUnit: true,
+            },
+          },
           batch: { select: { id: true, batchNumber: true, expiryDate: true } },
           warehouse: { select: { id: true, name: true } },
         },
@@ -209,7 +226,14 @@ export class AlertEvaluationService {
           batch: { expiryDate: { gte: today, lte: warning } },
         },
         include: {
-          medicine: { select: { id: true, name: true } },
+          medicine: {
+            select: {
+              id: true,
+              name: true,
+              expiryAlertValue: true,
+              expiryAlertUnit: true,
+            },
+          },
           batch: { select: { id: true, batchNumber: true, expiryDate: true } },
           pharmacy: { select: { id: true, name: true } },
         },
@@ -228,6 +252,16 @@ export class AlertEvaluationService {
     const daysUntil = (expiry: Date) =>
       Math.round((startOfDay(expiry).getTime() - today.getTime()) / 86_400_000);
 
+    const itemWindowDays = (med: {
+      expiryAlertValue: number | null;
+      expiryAlertUnit: string | null;
+    }) => {
+      if (med.expiryAlertValue != null) {
+        return leadTimeToDays(med.expiryAlertValue, med.expiryAlertUnit);
+      }
+      return orgWarningDays;
+    };
+
     const recipientWindowDays = (userId: string) => {
       const pref = prefByUser.get(userId);
       if (pref?.expiryAlertValue != null) {
@@ -238,9 +272,11 @@ export class AlertEvaluationService {
 
     for (const row of whRows) {
       const days = daysUntil(row.batch.expiryDate);
+      const itemDays = itemWindowDays(row.medicine);
+      if (days > itemDays) continue;
       const recipients = warehouseRecipients
         .filter((u) => !u.warehouseId || u.warehouseId === row.warehouseId || u.isSuperAdmin)
-        .filter((u) => days <= recipientWindowDays(u.id))
+        .filter((u) => days <= Math.max(itemDays, recipientWindowDays(u.id)))
         .map((u) => u.id);
       if (!recipients.length) continue;
       conditions.push({
@@ -260,9 +296,11 @@ export class AlertEvaluationService {
 
     for (const row of phRows) {
       const days = daysUntil(row.batch.expiryDate);
+      const itemDays = itemWindowDays(row.medicine);
+      if (days > itemDays) continue;
       const recipients = pharmacyRecipients
         .filter((u) => !u.pharmacyId || u.pharmacyId === row.pharmacyId || u.isSuperAdmin)
-        .filter((u) => days <= recipientWindowDays(u.id))
+        .filter((u) => days <= Math.max(itemDays, recipientWindowDays(u.id)))
         .map((u) => u.id);
       if (!recipients.length) continue;
       conditions.push({

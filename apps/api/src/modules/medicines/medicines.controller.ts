@@ -8,6 +8,7 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -131,6 +132,14 @@ class MedicineDto {
   @ValidateNested()
   @Type(() => InitialBatchDto)
   initialBatch: InitialBatchDto;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  expiryAlertValue: number;
+
+  @IsIn(['DAYS', 'WEEKS', 'MONTHS'])
+  expiryAlertUnit: 'DAYS' | 'WEEKS' | 'MONTHS';
 }
 
 class UpdateMedicineDto {
@@ -199,6 +208,16 @@ class UpdateMedicineDto {
   @ValidateNested({ each: true })
   @Type(() => PackLevelDto)
   packLevels?: PackLevelDto[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  expiryAlertValue?: number | null;
+
+  @IsOptional()
+  @IsIn(['DAYS', 'WEEKS', 'MONTHS'])
+  expiryAlertUnit?: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
 }
 
 class MedicineStatusDto {
