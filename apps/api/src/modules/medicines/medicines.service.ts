@@ -17,6 +17,7 @@ import {
   normalizeDosageForm,
   requiresStrength,
   unitCodeFromName,
+  validateBatchDates,
   validateMedicineNumbers,
 } from '../catalog/catalog-rules';
 import { parseSpreadsheetRows, pickField, resolveRowItemType, extractUnknownColumns, collectUnknownColumnNames } from '../catalog/spreadsheet-import';
@@ -144,6 +145,11 @@ export class MedicinesService {
       description?: string;
       importMetadata?: Record<string, string> | null;
       packLevels?: PackLevelInput[];
+      initialBatch?: {
+        batchNumber: string;
+        manufacturingDate?: string;
+        expiryDate: string;
+      };
     },
     userId: string,
   ) {
@@ -156,6 +162,30 @@ export class MedicinesService {
       await this.assertUniqueBarcode(barcode);
     }
     const packLevels = this.normalizePackLevels(data.packLevels);
+
+    let initialBatchData: {
+      batchNumber: string;
+      manufacturingDate: Date | null;
+      expiryDate: Date;
+    } | null = null;
+    if (data.initialBatch) {
+      const batchNumber = data.initialBatch.batchNumber?.trim();
+      if (!batchNumber) {
+        throw new BadRequestException('initialBatch.batchNumber is required');
+      }
+      if (!data.initialBatch.expiryDate) {
+        throw new BadRequestException('initialBatch.expiryDate is required');
+      }
+      const manufacturingDate = data.initialBatch.manufacturingDate
+        ? new Date(data.initialBatch.manufacturingDate)
+        : null;
+      const expiryDate = new Date(data.initialBatch.expiryDate);
+      const dateError = validateBatchDates(manufacturingDate, expiryDate);
+      if (dateError) {
+        throw new BadRequestException(dateError);
+      }
+      initialBatchData = { batchNumber, manufacturingDate, expiryDate };
+    }
 
     const medicine = await this.prisma.$transaction(async (tx) => {
       const created = await tx.medicine.create({
@@ -179,9 +209,22 @@ export class MedicinesService {
       if (packLevels.length) {
         await this.syncPackLevels(tx, created.id, packLevels);
       }
+      if (initialBatchData) {
+        await tx.medicineBatch.create({
+          data: {
+            medicineId: created.id,
+            batchNumber: initialBatchData.batchNumber,
+            manufacturingDate: initialBatchData.manufacturingDate,
+            expiryDate: initialBatchData.expiryDate,
+          },
+        });
+      }
       return tx.medicine.findUniqueOrThrow({
         where: { id: created.id },
-        include: medicineInclude,
+        include: {
+          ...medicineInclude,
+          batches: { orderBy: { expiryDate: 'asc' } },
+        },
       });
     });
     await this.audit.record({

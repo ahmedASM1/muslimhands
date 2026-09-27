@@ -6,6 +6,7 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsNumber,
@@ -49,6 +50,18 @@ class PackLevelDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+}
+
+class InitialBatchDto {
+  @IsString()
+  @MinLength(1)
+  batchNumber: string;
+
+  @IsDateString()
+  manufacturingDate: string;
+
+  @IsDateString()
+  expiryDate: string;
 }
 
 class MedicineDto {
@@ -114,6 +127,10 @@ class MedicineDto {
   @ValidateNested({ each: true })
   @Type(() => PackLevelDto)
   packLevels?: PackLevelDto[];
+
+  @ValidateNested()
+  @Type(() => InitialBatchDto)
+  initialBatch: InitialBatchDto;
 }
 
 class UpdateMedicineDto {

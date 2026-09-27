@@ -20,6 +20,16 @@ interface SystemSettings {
   organizationName: string;
 }
 
+interface NotificationPrefs {
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+  emailLowStock?: boolean;
+  emailExpiringSoon?: boolean;
+  emailExpiredStock?: boolean;
+  expiryAlertValue?: number | null;
+  expiryAlertUnit?: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
+}
+
 interface EmailStatus {
   provider: string;
   status: string;
@@ -89,6 +99,10 @@ export default function UserSettingsPage() {
     enabled: canReadSystem,
     queryFn: () => apiRequest<SystemSettings>('/settings'),
   });
+  const prefs = useQuery({
+    queryKey: ['notification-prefs'],
+    queryFn: () => apiRequest<NotificationPrefs>('/users/me/notification-preferences'),
+  });
   const emailStatus = useQuery({
     queryKey: ['settings-email-status'],
     enabled: canReadSystem,
@@ -103,6 +117,9 @@ export default function UserSettingsPage() {
   const [orgName, setOrgName] = useState('');
   const [expiryValue, setExpiryValue] = useState('3');
   const [expiryUnit, setExpiryUnit] = useState<'DAYS' | 'WEEKS' | 'MONTHS'>('MONTHS');
+  const [personalExpiryValue, setPersonalExpiryValue] = useState('');
+  const [personalExpiryUnit, setPersonalExpiryUnit] = useState<'DAYS' | 'WEEKS' | 'MONTHS'>('MONTHS');
+  const [useOrgExpiryDefault, setUseOrgExpiryDefault] = useState(true);
   const [testTo, setTestTo] = useState('');
   const [targets, setTargets] = useState<Record<TargetKey, boolean>>(() =>
     Object.fromEntries(TARGET_KEYS.map((key) => [key, false])) as Record<TargetKey, boolean>,
@@ -120,6 +137,14 @@ export default function UserSettingsPage() {
     );
   }, [system.data]);
 
+  useEffect(() => {
+    if (!prefs.data) return;
+    const hasPersonal = prefs.data.expiryAlertValue != null;
+    setUseOrgExpiryDefault(!hasPersonal);
+    setPersonalExpiryValue(hasPersonal ? String(prefs.data.expiryAlertValue) : '');
+    setPersonalExpiryUnit(prefs.data.expiryAlertUnit ?? 'MONTHS');
+  }, [prefs.data]);
+
   const saveSystem = useMutation({
     mutationFn: () =>
       apiRequest('/settings', {
@@ -133,6 +158,19 @@ export default function UserSettingsPage() {
     onSuccess: async () => {
       toast.push(t('settings.systemSaved'), 'success');
       await client.invalidateQueries({ queryKey: ['settings'] });
+    },
+    onError: (error: Error) => toast.push(error.message, 'error'),
+  });
+
+  const savePrefs = useMutation({
+    mutationFn: (body: Partial<NotificationPrefs>) =>
+      apiRequest<NotificationPrefs>('/users/me/notification-preferences', {
+        method: 'PATCH',
+        body,
+      }),
+    onSuccess: async () => {
+      toast.push(t('profile.prefsUpdated'), 'success');
+      await client.invalidateQueries({ queryKey: ['notification-prefs'] });
     },
     onError: (error: Error) => toast.push(error.message, 'error'),
   });
@@ -224,6 +262,105 @@ export default function UserSettingsPage() {
               }}
             >
               {t('common.arabic')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings.inventoryAlerts')}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">{t('settings.inventoryAlertsHint')}</p>
+
+          <div className="space-y-2 rounded-md border px-3 py-3">
+            <h3 className="text-sm font-medium">{t('settings.lowStockAlerts')}</h3>
+            <p className="text-xs text-muted-foreground">{t('settings.lowStockAlertsHint')}</p>
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span>{t('profile.emailLowStock')}</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={prefs.data?.emailLowStock ?? true}
+                disabled={prefs.data?.emailEnabled === false}
+                onChange={(e) => savePrefs.mutate({ emailLowStock: e.target.checked })}
+              />
+            </label>
+          </div>
+
+          <div className="space-y-2 rounded-md border px-3 py-3">
+            <h3 className="text-sm font-medium">{t('settings.expiryAlerts')}</h3>
+            <p className="text-xs text-muted-foreground">{t('settings.expiryAlertsHint')}</p>
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span>{t('profile.emailExpiringSoon')}</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={prefs.data?.emailExpiringSoon ?? true}
+                disabled={prefs.data?.emailEnabled === false}
+                onChange={(e) => savePrefs.mutate({ emailExpiringSoon: e.target.checked })}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span>{t('profile.emailExpiredStock')}</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={prefs.data?.emailExpiredStock ?? true}
+                disabled={prefs.data?.emailEnabled === false}
+                onChange={(e) => savePrefs.mutate({ emailExpiredStock: e.target.checked })}
+              />
+            </label>
+
+            <Label className="pt-2">{t('profile.expiryAlertLead')}</Label>
+            <p className="text-xs text-muted-foreground">{t('profile.expiryAlertLeadHint')}</p>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={useOrgExpiryDefault}
+                onChange={(e) => setUseOrgExpiryDefault(e.target.checked)}
+              />
+              {t('profile.useOrgDefault')}
+            </label>
+            {!useOrgExpiryDefault ? (
+              <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
+                <Input
+                  type="number"
+                  min={1}
+                  value={personalExpiryValue}
+                  onChange={(e) => setPersonalExpiryValue(e.target.value)}
+                />
+                <select
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={personalExpiryUnit}
+                  onChange={(e) =>
+                    setPersonalExpiryUnit(e.target.value as 'DAYS' | 'WEEKS' | 'MONTHS')
+                  }
+                >
+                  <option value="DAYS">{t('profile.timeUnitDays')}</option>
+                  <option value="WEEKS">{t('profile.timeUnitWeeks')}</option>
+                  <option value="MONTHS">{t('profile.timeUnitMonths')}</option>
+                </select>
+              </div>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() =>
+                savePrefs.mutate(
+                  useOrgExpiryDefault
+                    ? { expiryAlertValue: null, expiryAlertUnit: null }
+                    : {
+                        expiryAlertValue: Number(personalExpiryValue) || 1,
+                        expiryAlertUnit: personalExpiryUnit,
+                      },
+                )
+              }
+              disabled={savePrefs.isPending || (!useOrgExpiryDefault && !personalExpiryValue)}
+            >
+              {t('profile.saveAlertPrefs')}
             </Button>
           </div>
         </CardContent>

@@ -79,6 +79,9 @@ type MedicineForm = {
   reorderQuantity: number;
   referenceValue?: string;
   description?: string;
+  batchNumber?: string;
+  manufacturingDate?: string;
+  expiryDate?: string;
 };
 
 function needsStrength(dosageForm: string, itemType?: string | null) {
@@ -122,6 +125,9 @@ export default function MedicinesPage() {
         reorderQuantity: z.coerce.number().min(0, t('inventory.medicines.validation.reorderQuantity')),
         referenceValue: z.string().optional(),
         description: z.string().optional(),
+        batchNumber: z.string().optional(),
+        manufacturingDate: z.string().optional(),
+        expiryDate: z.string().optional(),
       }),
     [t],
   );
@@ -186,6 +192,9 @@ export default function MedicinesPage() {
       reorderQuantity: 0,
       referenceValue: '',
       description: '',
+      batchNumber: '',
+      manufacturingDate: '',
+      expiryDate: '',
     },
   });
 
@@ -221,8 +230,26 @@ export default function MedicinesPage() {
       ) {
         throw new Error(t('inventory.medicines.validation.strengthRequired'));
       }
-      const body = {
-        ...values,
+      if (!editing) {
+        if (!(values.batchNumber ?? '').trim()) {
+          throw new Error(t('inventory.medicines.validation.batchNumberRequired'));
+        }
+        if (!(values.manufacturingDate ?? '').trim()) {
+          throw new Error(t('inventory.medicines.validation.manufacturingDateRequired'));
+        }
+        if (!(values.expiryDate ?? '').trim()) {
+          throw new Error(t('inventory.medicines.validation.expiryDateRequired'));
+        }
+        if (values.manufacturingDate! > values.expiryDate!) {
+          throw new Error(t('inventory.medicines.validation.expiryAfterMfg'));
+        }
+      }
+      const body: Record<string, unknown> = {
+        name: values.name,
+        categoryId: values.categoryId,
+        unitId: values.unitId,
+        minimumStock: values.minimumStock,
+        reorderQuantity: values.reorderQuantity,
         sku: values.sku || undefined,
         barcode: values.barcode || undefined,
         genericName: values.genericName || undefined,
@@ -240,6 +267,13 @@ export default function MedicinesPage() {
             sortOrder: index,
           })),
       };
+      if (!editing) {
+        body.initialBatch = {
+          batchNumber: values.batchNumber!.trim(),
+          manufacturingDate: values.manufacturingDate,
+          expiryDate: values.expiryDate,
+        };
+      }
       return editing
         ? apiRequest(`/medicines/${editing.id}`, { method: 'PATCH', body })
         : apiRequest('/medicines', { method: 'POST', body });
@@ -267,8 +301,12 @@ export default function MedicinesPage() {
         reorderQuantity: 0,
         referenceValue: '',
         description: '',
+        batchNumber: '',
+        manufacturingDate: '',
+        expiryDate: '',
       });
       client.invalidateQueries({ queryKey: ['medicines'] });
+      client.invalidateQueries({ queryKey: ['batches'] });
     },
     onError: (error) => toast.push((error as Error).message, 'error'),
   });
@@ -372,6 +410,9 @@ export default function MedicinesPage() {
       reorderQuantity: 0,
       referenceValue: '',
       description: '',
+      batchNumber: '',
+      manufacturingDate: '',
+      expiryDate: '',
     });
     setOpen(true);
   }
@@ -399,6 +440,9 @@ export default function MedicinesPage() {
       reorderQuantity: row.reorderQuantity,
       referenceValue: row.referenceValue == null ? '' : String(row.referenceValue),
       description: row.description ?? '',
+      batchNumber: '',
+      manufacturingDate: '',
+      expiryDate: '',
     });
     setOpen(true);
   }
@@ -731,8 +775,9 @@ export default function MedicinesPage() {
             <h2 className="text-sm font-semibold">{t('inventory.medicines.inventoryRules')}</h2>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1">
-                <Label>{t('table.minimumStock')}</Label>
+                <Label>{t('inventory.medicines.lowStockThreshold')}</Label>
                 <Input type="number" min={0} {...form.register('minimumStock')} />
+                <p className="text-xs text-muted-foreground">{t('inventory.medicines.lowStockThresholdHint')}</p>
                 {form.formState.errors.minimumStock ? <p className="text-sm text-destructive">{form.formState.errors.minimumStock.message}</p> : null}
               </div>
               <div className="space-y-1">
@@ -742,6 +787,30 @@ export default function MedicinesPage() {
               </div>
             </div>
           </section>
+          {!editing ? (
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold">{t('inventory.medicines.expirySection')}</h2>
+              <p className="text-xs text-muted-foreground">{t('inventory.medicines.expirySectionHint')}</p>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1">
+                  <Label>{t('table.batchNumber')} *</Label>
+                  <Input {...form.register('batchNumber')} placeholder="BATCH-001" />
+                </div>
+                <div className="space-y-1">
+                  <Label>{t('table.manufacturingDate')} *</Label>
+                  <Input type="date" {...form.register('manufacturingDate')} />
+                </div>
+                <div className="space-y-1">
+                  <Label>{t('table.expiryDate')} *</Label>
+                  <Input type="date" {...form.register('expiryDate')} />
+                </div>
+              </div>
+            </section>
+          ) : (
+            <section className="space-y-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+              {t('inventory.medicines.manageBatchesHint')}
+            </section>
+          )}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold">{t('inventory.medicines.packaging')}</h2>
