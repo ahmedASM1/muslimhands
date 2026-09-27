@@ -121,11 +121,9 @@ export default function NotificationsClient() {
       <div className="space-y-2">
         {(list.data?.items ?? []).map((n) => {
           const titleKey = `notifications.types.${n.type}.title`;
-          const messageKey = `notifications.types.${n.type}.message`;
           const titleT = t(titleKey);
-          const messageT = t(messageKey);
           const title = titleT === titleKey ? n.title : titleT;
-          const message = messageT === messageKey ? n.message : messageT;
+          const message = n.message;
           const content = (
             <div className="w-full text-start">
               <div className="flex flex-wrap items-center gap-2">

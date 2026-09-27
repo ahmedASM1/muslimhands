@@ -138,6 +138,7 @@ describe('Phase 6B AlertEvaluationService isolation', () => {
     supplyRequest: { findMany: jest.fn() },
     stockTransfer: { findMany: jest.fn() },
     user: { findMany: jest.fn() },
+    notificationPreference: { findMany: jest.fn() },
   };
   const notifications = {
     upsertActiveAlert: jest.fn(),
@@ -153,6 +154,7 @@ describe('Phase 6B AlertEvaluationService isolation', () => {
     notifications.upsertActiveAlert.mockResolvedValue({ created: true });
     notifications.resolveStaleAlerts.mockResolvedValue(0);
     notifications.cleanupResolved.mockResolvedValue(0);
+    prisma.notificationPreference.findMany.mockResolvedValue([]);
     prisma.user.findMany.mockResolvedValue([
       {
         id: 'wh-user',
@@ -243,6 +245,27 @@ describe('Phase 6B AlertEvaluationService isolation', () => {
       expect.objectContaining({
         dedupeKey: 'LOW_STOCK:WAREHOUSE:wh-1:MEDICINE:m1',
         severity: NotificationSeverity.WARNING,
+      }),
+    );
+  });
+
+  it('creates out-of-stock alerts when quantity is zero', async () => {
+    prisma.warehouseStock.groupBy.mockResolvedValue([
+      { warehouseId: 'wh-1', medicineId: 'm1', _sum: { quantity: 0 } },
+    ]);
+    prisma.pharmacyStock.groupBy.mockResolvedValue([]);
+    prisma.medicine.findMany.mockResolvedValue([
+      { id: 'm1', name: 'Paracetamol', minimumStock: 50 },
+    ]);
+    prisma.warehouse.findMany.mockResolvedValue([{ id: 'wh-1', name: 'Central' }]);
+    prisma.pharmacy.findMany.mockResolvedValue([]);
+
+    await service.evaluateLowStock();
+    expect(notifications.upsertActiveAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dedupeKey: 'OUT_OF_STOCK:WAREHOUSE:wh-1:MEDICINE:m1',
+        type: NotificationType.OUT_OF_STOCK,
+        severity: NotificationSeverity.CRITICAL,
       }),
     );
   });

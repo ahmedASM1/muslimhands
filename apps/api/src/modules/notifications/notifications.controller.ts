@@ -54,7 +54,8 @@ export class NotificationsController {
   @Get()
   @ApiOperation({ summary: 'List notifications for the authenticated user' })
   @RequirePermissions(PERMISSIONS.NOTIFICATION_VIEW)
-  list(@CurrentUser() user: RequestUser, @Query() query: NotificationQueryDto) {
+  async list(@CurrentUser() user: RequestUser, @Query() query: NotificationQueryDto) {
+    await this.alerts.evaluateAllDebounced().catch(() => undefined);
     return this.service.list(user.id, query);
   }
 
@@ -66,9 +67,10 @@ export class NotificationsController {
   }
 
   @Get('summary')
-  @ApiOperation({ summary: 'Active alert summary for dashboards' })
+  @ApiOperation({ summary: 'Unread alert summary for dashboards' })
   @RequirePermissions(PERMISSIONS.NOTIFICATION_VIEW)
-  summary(@CurrentUser() user: RequestUser) {
+  async summary(@CurrentUser() user: RequestUser) {
+    await this.alerts.evaluateAllDebounced().catch(() => undefined);
     return this.service.summary(user.id);
   }
 

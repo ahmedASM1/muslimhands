@@ -102,28 +102,31 @@ export class NotificationsService {
 
   async markAllRead(userId: string) {
     const result = await this.prisma.notification.updateMany({
-      where: { userId, status: NotificationStatus.UNREAD },
+      where: { userId, status: NotificationStatus.UNREAD, resolvedAt: null },
       data: { status: NotificationStatus.READ, readAt: new Date() },
     });
     return { updated: result.count };
   }
 
   async summary(userId: string) {
+    // Dashboard banner counts unread active alerts so "Mark all read" clears it.
+    const unreadWhere: Prisma.NotificationWhereInput = {
+      userId,
+      resolvedAt: null,
+      status: NotificationStatus.UNREAD,
+    };
     const [active, unread, critical, byType] = await Promise.all([
       this.prisma.notification.count({ where: { userId, resolvedAt: null } }),
-      this.prisma.notification.count({
-        where: { userId, resolvedAt: null, status: NotificationStatus.UNREAD },
-      }),
+      this.prisma.notification.count({ where: unreadWhere }),
       this.prisma.notification.count({
         where: {
-          userId,
-          resolvedAt: null,
+          ...unreadWhere,
           severity: NotificationSeverity.CRITICAL,
         },
       }),
       this.prisma.notification.groupBy({
         by: ['type'],
-        where: { userId, resolvedAt: null },
+        where: unreadWhere,
         _count: true,
       }),
     ]);
@@ -133,7 +136,9 @@ export class NotificationsService {
       active,
       unread,
       critical,
-      lowStock: counts[NotificationType.LOW_STOCK] ?? 0,
+      lowStock:
+        (counts[NotificationType.LOW_STOCK] ?? 0) +
+        (counts[NotificationType.OUT_OF_STOCK] ?? 0),
       expiringSoon: counts[NotificationType.EXPIRING_SOON] ?? 0,
       expiredStock: counts[NotificationType.EXPIRED_STOCK] ?? 0,
       pendingSupplyRequests: counts[NotificationType.PENDING_SUPPLY_REQUEST] ?? 0,

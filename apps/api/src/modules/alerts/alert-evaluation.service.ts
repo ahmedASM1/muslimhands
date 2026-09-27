@@ -33,6 +33,7 @@ export interface AlertCondition {
 @Injectable()
 export class AlertEvaluationService {
   private readonly logger = new Logger(AlertEvaluationService.name);
+  private lastEvaluateAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -40,7 +41,19 @@ export class AlertEvaluationService {
     private readonly settings: SettingsService,
   ) {}
 
+  /** Run evaluation at most once per interval (used when opening dashboard/notifications). */
+  async evaluateAllDebounced(minIntervalMs = 5 * 60 * 1000) {
+    const now = Date.now();
+    if (now - this.lastEvaluateAt < minIntervalMs) {
+      return { skipped: true as const };
+    }
+    this.lastEvaluateAt = now;
+    const results = await this.evaluateAll();
+    return { skipped: false as const, results };
+  }
+
   async evaluateAll() {
+    this.lastEvaluateAt = Date.now();
     const results: Record<string, { ok: boolean; created: number; resolved: number; error?: string }> = {};
     const runners: Array<[string, () => Promise<{ created: number; resolved: number }>]> = [
       ['lowStock', () => this.evaluateLowStock()],
@@ -124,19 +137,38 @@ export class AlertEvaluationService {
       { pharmacyScoped: true },
     );
 
+    const outOfStock: AlertCondition[] = [];
+
     for (const row of whGroups) {
       const medicine = medicineById.get(row.medicineId);
       if (!medicine) continue;
       const qty = row._sum.quantity ?? 0;
-      if (qty <= 0 || qty > medicine.minimumStock) continue;
+      if (qty > medicine.minimumStock) continue;
       const recipients = warehouseRecipients
         .filter((u) => !u.warehouseId || u.warehouseId === row.warehouseId || u.isSuperAdmin)
         .map((u) => u.id);
+      const location = warehouseName.get(row.warehouseId) ?? 'warehouse';
+      if (qty <= 0) {
+        outOfStock.push({
+          dedupeKey: `OUT_OF_STOCK:WAREHOUSE:${row.warehouseId}:MEDICINE:${row.medicineId}`,
+          type: NotificationType.OUT_OF_STOCK,
+          title: `Out of stock: ${medicine.name}`,
+          message: `${medicine.name} has no available stock in ${location}.`,
+          severity: NotificationSeverity.CRITICAL,
+          entityType: 'Medicine',
+          entityId: medicine.id,
+          locationType: LocationType.WAREHOUSE,
+          warehouseId: row.warehouseId,
+          href: '/warehouse/stock',
+          recipientUserIds: recipients,
+        });
+        continue;
+      }
       conditions.push({
         dedupeKey: `LOW_STOCK:WAREHOUSE:${row.warehouseId}:MEDICINE:${row.medicineId}`,
         type: NotificationType.LOW_STOCK,
         title: `Low stock: ${medicine.name}`,
-        message: `${medicine.name} is below the configured minimum stock level in ${warehouseName.get(row.warehouseId) ?? 'warehouse'} (${qty} ≤ ${medicine.minimumStock}).`,
+        message: `${medicine.name} is below the configured minimum stock level in ${location} (${qty} ≤ ${medicine.minimumStock}).`,
         severity: NotificationSeverity.WARNING,
         entityType: 'Medicine',
         entityId: medicine.id,
@@ -151,15 +183,32 @@ export class AlertEvaluationService {
       const medicine = medicineById.get(row.medicineId);
       if (!medicine) continue;
       const qty = row._sum.quantity ?? 0;
-      if (qty <= 0 || qty > medicine.minimumStock) continue;
+      if (qty > medicine.minimumStock) continue;
       const recipients = pharmacyRecipients
         .filter((u) => !u.pharmacyId || u.pharmacyId === row.pharmacyId || u.isSuperAdmin)
         .map((u) => u.id);
+      const location = pharmacyName.get(row.pharmacyId) ?? 'pharmacy';
+      if (qty <= 0) {
+        outOfStock.push({
+          dedupeKey: `OUT_OF_STOCK:PHARMACY:${row.pharmacyId}:MEDICINE:${row.medicineId}`,
+          type: NotificationType.OUT_OF_STOCK,
+          title: `Out of stock: ${medicine.name}`,
+          message: `${medicine.name} has no available stock in ${location}.`,
+          severity: NotificationSeverity.CRITICAL,
+          entityType: 'Medicine',
+          entityId: medicine.id,
+          locationType: LocationType.PHARMACY,
+          pharmacyId: row.pharmacyId,
+          href: '/pharmacy/stock',
+          recipientUserIds: recipients,
+        });
+        continue;
+      }
       conditions.push({
         dedupeKey: `LOW_STOCK:PHARMACY:${row.pharmacyId}:MEDICINE:${row.medicineId}`,
         type: NotificationType.LOW_STOCK,
         title: `Low stock: ${medicine.name}`,
-        message: `${medicine.name} is below the configured minimum stock level in ${pharmacyName.get(row.pharmacyId) ?? 'pharmacy'} (${qty} ≤ ${medicine.minimumStock}).`,
+        message: `${medicine.name} is below the configured minimum stock level in ${location} (${qty} ≤ ${medicine.minimumStock}).`,
         severity: NotificationSeverity.WARNING,
         entityType: 'Medicine',
         entityId: medicine.id,
@@ -170,7 +219,12 @@ export class AlertEvaluationService {
       });
     }
 
-    return this.syncConditions(NotificationType.LOW_STOCK, conditions);
+    const low = await this.syncConditions(NotificationType.LOW_STOCK, conditions);
+    const out = await this.syncConditions(NotificationType.OUT_OF_STOCK, outOfStock);
+    return {
+      created: low.created + out.created,
+      resolved: low.resolved + out.resolved,
+    };
   }
 
   async evaluateExpiringSoon() {
@@ -179,7 +233,12 @@ export class AlertEvaluationService {
     const orgWarningDays = await this.settings.getExpiryWarningDays();
 
     const prefs = await this.prisma.notificationPreference.findMany({
-      select: { userId: true, expiryAlertValue: true, expiryAlertUnit: true },
+      select: {
+        userId: true,
+        expiryAlertValue: true,
+        expiryAlertUnit: true,
+        inAppEnabled: true,
+      },
     });
     const prefByUser = new Map(prefs.map((p) => [p.userId, p]));
     const maxPersonalDays = prefs.reduce((max, pref) => {
@@ -262,21 +321,21 @@ export class AlertEvaluationService {
       return orgWarningDays;
     };
 
-    const recipientWindowDays = (userId: string) => {
+    /** Personal lead overrides medicine/org when set. */
+    const effectiveWindowDays = (userId: string, itemDays: number) => {
       const pref = prefByUser.get(userId);
       if (pref?.expiryAlertValue != null) {
         return leadTimeToDays(pref.expiryAlertValue, pref.expiryAlertUnit);
       }
-      return orgWarningDays;
+      return itemDays;
     };
 
     for (const row of whRows) {
       const days = daysUntil(row.batch.expiryDate);
       const itemDays = itemWindowDays(row.medicine);
-      if (days > itemDays) continue;
       const recipients = warehouseRecipients
         .filter((u) => !u.warehouseId || u.warehouseId === row.warehouseId || u.isSuperAdmin)
-        .filter((u) => days <= Math.max(itemDays, recipientWindowDays(u.id)))
+        .filter((u) => days <= effectiveWindowDays(u.id, itemDays))
         .map((u) => u.id);
       if (!recipients.length) continue;
       conditions.push({
@@ -297,10 +356,9 @@ export class AlertEvaluationService {
     for (const row of phRows) {
       const days = daysUntil(row.batch.expiryDate);
       const itemDays = itemWindowDays(row.medicine);
-      if (days > itemDays) continue;
       const recipients = pharmacyRecipients
         .filter((u) => !u.pharmacyId || u.pharmacyId === row.pharmacyId || u.isSuperAdmin)
-        .filter((u) => days <= Math.max(itemDays, recipientWindowDays(u.id)))
+        .filter((u) => days <= effectiveWindowDays(u.id, itemDays))
         .map((u) => u.id);
       if (!recipients.length) continue;
       conditions.push({
@@ -469,9 +527,22 @@ export class AlertEvaluationService {
   private async syncConditions(type: NotificationType, conditions: AlertCondition[]) {
     let created = 0;
     const activeKeys = new Set(conditions.map((c) => c.dedupeKey));
+    const allRecipientIds = [...new Set(conditions.flatMap((c) => c.recipientUserIds))];
+    const prefs =
+      allRecipientIds.length > 0
+        ? await this.prisma.notificationPreference.findMany({
+            where: { userId: { in: allRecipientIds } },
+            select: { userId: true, inAppEnabled: true },
+          })
+        : [];
+    const inAppDisabled = new Set(
+      prefs.filter((p) => p.inAppEnabled === false).map((p) => p.userId),
+    );
 
     for (const condition of conditions) {
-      const uniqueRecipients = [...new Set(condition.recipientUserIds)];
+      const uniqueRecipients = [...new Set(condition.recipientUserIds)].filter(
+        (userId) => !inAppDisabled.has(userId),
+      );
       for (const userId of uniqueRecipients) {
         const result = await this.notifications.upsertActiveAlert({
           userId,

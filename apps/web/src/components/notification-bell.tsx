@@ -31,12 +31,11 @@ function localizeNotification(
   t: (key: string, params?: Record<string, string | number>) => string,
 ) {
   const titleKey = `notifications.types.${item.type}.title`;
-  const messageKey = `notifications.types.${item.type}.message`;
   const title = t(titleKey);
-  const message = t(messageKey);
   return {
+    // Prefer server title/message — they include medicine, qty, location details.
     title: title === titleKey ? item.title : title,
-    message: message === messageKey ? item.message : message,
+    message: item.message,
   };
 }
 
@@ -62,14 +61,21 @@ export function NotificationBell() {
     queryFn: () => apiList<NotificationItem>('/notifications?limit=8&activeOnly=true'),
   });
 
+  const invalidateNotifications = () => {
+    client.invalidateQueries({ queryKey: ['notifications'] });
+    client.invalidateQueries({ queryKey: ['notifications-unread'] });
+    client.invalidateQueries({ queryKey: ['notifications-recent'] });
+    client.invalidateQueries({ queryKey: ['notifications-summary'] });
+  };
+
   const markOne = useMutation({
     mutationFn: (id: string) => apiRequest(`/notifications/${id}/read`, { method: 'POST' }),
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: ['notifications'] });
-      client.invalidateQueries({ queryKey: ['notifications-unread'] });
-      client.invalidateQueries({ queryKey: ['notifications-recent'] });
-      client.invalidateQueries({ queryKey: ['notifications-summary'] });
-    },
+    onSuccess: invalidateNotifications,
+  });
+
+  const markAll = useMutation({
+    mutationFn: () => apiRequest('/notifications/read-all', { method: 'POST' }),
+    onSuccess: invalidateNotifications,
   });
 
   useEffect(() => {
@@ -122,15 +128,27 @@ export function NotificationBell() {
           aria-label={t('header.recentNotifications')}
           className="absolute end-0 z-50 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-lg border bg-card p-2 shadow-lg"
         >
-          <div className="mb-2 flex items-center justify-between px-2 py-1">
+          <div className="mb-2 flex items-center justify-between gap-2 px-2 py-1">
             <p className="text-sm font-medium">{t('notifications.title')}</p>
-            <Link
-              href="/notifications"
-              className="text-xs text-primary hover:underline"
-              onClick={() => setOpen(false)}
-            >
-              {t('common.viewAll')}
-            </Link>
+            <div className="flex items-center gap-2">
+              {count > 0 ? (
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:underline disabled:opacity-50"
+                  disabled={markAll.isPending}
+                  onClick={() => markAll.mutate()}
+                >
+                  {markAll.isPending ? t('notifications.marking') : t('notifications.markAllRead')}
+                </button>
+              ) : null}
+              <Link
+                href="/notifications"
+                className="text-xs text-primary hover:underline"
+                onClick={() => setOpen(false)}
+              >
+                {t('common.viewAll')}
+              </Link>
+            </div>
           </div>
           <div className="max-h-80 space-y-1 overflow-y-auto">
             {recent.isLoading ? (

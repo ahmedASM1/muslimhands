@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
   AlertTriangle,
@@ -134,6 +134,7 @@ function MetricCard({
 export default function DashboardPage() {
   const { user } = useAuth();
   const { t } = useI18n();
+  const client = useQueryClient();
   const query = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => apiRequest<DashboardData>('/dashboard'),
@@ -153,6 +154,16 @@ export default function DashboardPage() {
       }>('/notifications/summary'),
   });
 
+  const markAllRead = useMutation({
+    mutationFn: () => apiRequest('/notifications/read-all', { method: 'POST' }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['notifications'] });
+      client.invalidateQueries({ queryKey: ['notifications-unread'] });
+      client.invalidateQueries({ queryKey: ['notifications-recent'] });
+      client.invalidateQueries({ queryKey: ['notifications-summary'] });
+    },
+  });
+
   const cards = query.data?.cards ?? {};
   const role = query.data?.context?.role;
   const isWarehouse = role === 'warehouse' || role === 'admin';
@@ -170,10 +181,23 @@ export default function DashboardPage() {
     hasPermission(user, 'supply-requests:create') || hasPermission(user, 'supply-request:create');
   const canReceiveTransfer =
     hasPermission(user, 'transfers:receive') || hasPermission(user, 'transfer:receive');
+  const canViewNotifications =
+    hasPermission(user, 'notifications:read') || hasPermission(user, 'notification:view');
 
   const stockHref = isPharmacy ? '/pharmacy/stock' : '/warehouse/stock';
   const requestsHref = isPharmacy ? '/pharmacy/supply-requests' : '/warehouse/supply-requests';
   const transfersHref = isPharmacy ? '/pharmacy/transfers' : '/warehouse/transfers';
+
+  const unreadAlerts = alerts.data?.unread ?? 0;
+  const alertBannerTotal = alerts.data
+    ? alerts.data.unread +
+      alerts.data.critical +
+      alerts.data.lowStock +
+      alerts.data.expiringSoon +
+      alerts.data.expiredStock +
+      (isPharmacy ? alerts.data.transfersAwaitingReceipt : alerts.data.pendingSupplyRequests)
+    : 0;
+  const showAlertBanner = Boolean(alerts.data && canViewNotifications && alertBannerTotal > 0);
 
   return (
     <div className="space-y-8">
@@ -243,40 +267,58 @@ export default function DashboardPage() {
         />
       ) : null}
 
-      {alerts.data ? (
+      {showAlertBanner ? (
         <section className="space-y-3" aria-label={t('dashboard.inventoryHealthAlerts')}>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('dashboard.inventoryHealthAlerts')}
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('dashboard.inventoryHealthAlerts')}
+            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+              {unreadAlerts > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={markAllRead.isPending}
+                  onClick={() => markAllRead.mutate()}
+                >
+                  {markAllRead.isPending ? t('notifications.marking') : t('notifications.markAllRead')}
+                </Button>
+              ) : null}
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/notifications">{t('common.viewAll')}</Link>
+              </Button>
+            </div>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-            <MetricCard label={t('dashboard.unreadAlerts')} value={formatQuantity(alerts.data.unread)} href="/notifications" />
+            <MetricCard label={t('dashboard.unreadAlerts')} value={formatQuantity(alerts.data!.unread)} href="/notifications" />
             <MetricCard
               label={t('dashboard.criticalAlerts')}
-              value={formatQuantity(alerts.data.critical)}
+              value={formatQuantity(alerts.data!.critical)}
               href="/notifications?tab=unread"
               hint={t('dashboard.requiresAttention')}
             />
             <MetricCard
               label={t('dashboard.lowStock')}
-              value={formatQuantity(alerts.data.lowStock)}
+              value={formatQuantity(alerts.data!.lowStock)}
               href="/reports/low-stock"
             />
             <MetricCard
               label={t('dashboard.expiringSoon')}
-              value={formatQuantity(alerts.data.expiringSoon)}
+              value={formatQuantity(alerts.data!.expiringSoon)}
               href="/reports/expiry"
             />
             <MetricCard
               label={t('dashboard.expiredStock')}
-              value={formatQuantity(alerts.data.expiredStock)}
+              value={formatQuantity(alerts.data!.expiredStock)}
               href="/reports/expiry"
             />
             <MetricCard
               label={isPharmacy ? t('dashboard.incomingTransfers') : t('dashboard.pendingRequests')}
               value={formatQuantity(
                 isPharmacy
-                  ? alerts.data.transfersAwaitingReceipt
-                  : alerts.data.pendingSupplyRequests,
+                  ? alerts.data!.transfersAwaitingReceipt
+                  : alerts.data!.pendingSupplyRequests,
               )}
               href={isPharmacy ? transfersHref : requestsHref}
             />
