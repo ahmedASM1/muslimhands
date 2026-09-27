@@ -4,7 +4,7 @@
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditAction, DosageForm as SharedDosageForm, normalizeCatalogItemType } from '@mh/shared';
+import { AuditAction, DosageForm as SharedDosageForm, normalizeCatalogItemType, catalogItemTypeLabel, CATALOG_ITEM_TYPE } from '@mh/shared';
 import { DosageForm, Prisma } from '@prisma/client';
 import { IsBooleanString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
@@ -14,7 +14,9 @@ import {
   generateSku,
   isValidBarcode,
   nextSkuCandidate,
+  normalizeDosageForm,
   requiresStrength,
+  unitCodeFromName,
   validateMedicineNumbers,
 } from '../catalog/catalog-rules';
 import { parseSpreadsheetRows, pickField } from '../catalog/spreadsheet-import';
@@ -244,7 +246,11 @@ export class MedicinesService {
     return this.update(id, { isActive }, userId);
   }
 
-  async importFromFile(file: { buffer: Buffer; originalname: string }, userId: string) {
+  async importFromFile(
+    file: { buffer: Buffer; originalname: string },
+    userId: string,
+    options?: { defaultItemType?: string },
+  ) {
     if (!file?.buffer?.length) {
       throw new BadRequestException('Upload a CSV or Excel file');
     }
@@ -260,8 +266,16 @@ export class MedicinesService {
       throw new BadRequestException('No data rows found in the file');
     }
 
+    const defaultItemType = normalizeCatalogItemType(
+      options?.defaultItemType || CATALOG_ITEM_TYPE.MEDICINE,
+    );
+
     const categories = await this.prisma.medicineCategory.findMany({ where: { deletedAt: null } });
     const units = await this.prisma.unit.findMany();
+    /** key: `${lowerName}::${itemType}` */
+    const categoryByKey = new Map(
+      categories.map((item) => [`${item.name.toLowerCase()}::${item.itemType}`, item]),
+    );
     const categoryByName = new Map(categories.map((item) => [item.name.toLowerCase(), item]));
     const unitByCode = new Map(units.map((item) => [item.code.toLowerCase(), item]));
     const unitByName = new Map(units.map((item) => [item.name.toLowerCase(), item]));
@@ -269,57 +283,144 @@ export class MedicinesService {
     const created: string[] = [];
     const updated: string[] = [];
     const skipped: { row: number; reason: string }[] = [];
+    let createdMedicines = 0;
+    let createdSupplies = 0;
+    let updatedMedicines = 0;
+    let updatedSupplies = 0;
 
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index]!;
-      const name = pickField(row, 'name', 'medicine', 'medicine_name', 'الاسم');
+      const name = pickField(
+        row,
+        'name',
+        'medicine',
+        'medicine_name',
+        'product',
+        'product_name',
+        'item',
+        'item_name',
+        'supply',
+        'supply_name',
+        'الاسم',
+        'اسم_الدواء',
+        'اسم_المستلزم',
+      );
       if (!name || name.length < 2) {
         skipped.push({ row: index + 2, reason: 'Missing or short name' });
         continue;
       }
 
-      const categoryName = pickField(row, 'category', 'category_name', 'التصنيف');
-      let category = categoryName ? categoryByName.get(categoryName.toLowerCase()) : undefined;
-      if (!category && categoryName) {
-        const itemType = normalizeCatalogItemType(
-          pickField(row, 'item_type', 'itemtype', 'type', 'النوع') || 'MEDICINE',
-        );
-        category = await this.prisma.medicineCategory.create({
-          data: { name: categoryName, itemType },
-        });
-        categoryByName.set(category.name.toLowerCase(), category);
-      }
-      if (!category) {
+      const itemTypeRaw = pickField(
+        row,
+        'item_type',
+        'itemtype',
+        'type',
+        'catalog_type',
+        'product_type',
+        'النوع',
+        'نوع_الصنف',
+        'نوع_العنصر',
+      );
+      const itemType = normalizeCatalogItemType(itemTypeRaw || defaultItemType);
+      const isSupply = itemType !== CATALOG_ITEM_TYPE.MEDICINE;
+
+      const categoryName = pickField(
+        row,
+        'category',
+        'category_name',
+        'التصنيف',
+        'الفئة',
+        'الصنف',
+      );
+      if (!categoryName) {
         skipped.push({ row: index + 2, reason: 'Category is required' });
         continue;
       }
 
-      const unitRaw = pickField(row, 'unit', 'unit_code', 'unit_name', 'الوحدة');
-      const unit =
+      let category =
+        categoryByKey.get(`${categoryName.toLowerCase()}::${itemType}`) ??
+        (() => {
+          const byName = categoryByName.get(categoryName.toLowerCase());
+          return byName && byName.itemType === itemType ? byName : undefined;
+        })();
+
+      if (!category) {
+        const sameName = categoryByName.get(categoryName.toLowerCase());
+        if (sameName && sameName.itemType !== itemType) {
+          const medicineCount = await this.prisma.medicine.count({
+            where: { categoryId: sameName.id, deletedAt: null },
+          });
+          if (medicineCount === 0) {
+            category = await this.prisma.medicineCategory.update({
+              where: { id: sameName.id },
+              data: { itemType, isActive: true, deletedAt: null },
+            });
+          } else {
+            const typedName = `${categoryName} · ${catalogItemTypeLabel(itemType, 'en')}`;
+            category =
+              categoryByName.get(typedName.toLowerCase()) ??
+              (await this.prisma.medicineCategory.create({
+                data: { name: typedName, itemType },
+              }));
+          }
+        } else {
+          category = await this.prisma.medicineCategory.create({
+            data: { name: categoryName, itemType },
+          });
+        }
+        categoryByKey.set(`${category.name.toLowerCase()}::${category.itemType}`, category);
+        categoryByName.set(category.name.toLowerCase(), category);
+      }
+
+      const unitRaw = pickField(row, 'unit', 'unit_code', 'unit_name', 'الوحدة', 'وحدة');
+      let unit =
         (unitRaw ? unitByCode.get(unitRaw.toLowerCase()) : undefined) ??
-        (unitRaw ? unitByName.get(unitRaw.toLowerCase()) : undefined) ??
-        units.find((item) => item.code === 'UNIT' || item.code === 'PIECE') ??
-        units[0];
+        (unitRaw ? unitByName.get(unitRaw.toLowerCase()) : undefined);
+
+      if (!unit && unitRaw) {
+        let code = unitCodeFromName(unitRaw);
+        let attempt = 1;
+        while (unitByCode.has(code.toLowerCase()) || units.some((u) => u.code === code)) {
+          attempt += 1;
+          code = `${unitCodeFromName(unitRaw).slice(0, 20)}_${attempt}`.slice(0, 24);
+        }
+        unit = await this.prisma.unit.create({
+          data: { code, name: unitRaw, isActive: true },
+        });
+        units.push(unit);
+        unitByCode.set(unit.code.toLowerCase(), unit);
+        unitByName.set(unit.name.toLowerCase(), unit);
+      }
+
       if (!unit) {
-        skipped.push({ row: index + 2, reason: 'No unit available' });
+        unit =
+          units.find((item) => item.code === 'UNIT' || item.code === 'PIECE') ?? units[0];
+      }
+      if (!unit) {
+        skipped.push({ row: index + 2, reason: 'Unit is required (no unit in file or system)' });
         continue;
       }
 
-      const dosageRaw = pickField(row, 'dosage_form', 'dosageform', 'form', 'الشكل').toUpperCase();
-      const dosageForm = (Object.values(DosageForm).includes(dosageRaw as DosageForm)
-        ? dosageRaw
-        : category.itemType === 'MEDICINE'
-          ? DosageForm.TABLET
-          : DosageForm.OTHER) as DosageForm;
+      const dosageFallback = isSupply ? DosageForm.OTHER : DosageForm.TABLET;
+      const dosageForm = isSupply
+        ? DosageForm.OTHER
+        : normalizeDosageForm(
+            pickField(row, 'dosage_form', 'dosageform', 'form', 'الشكل', 'الشكل_الصيدلاني'),
+            dosageFallback,
+          );
 
-      const strength = pickField(row, 'strength', 'concentration', 'التركيز') || undefined;
-      const sku = pickField(row, 'sku', 'code') || undefined;
-      const barcode = pickField(row, 'barcode') || undefined;
-      const genericName = pickField(row, 'generic_name', 'generic', 'الاسم_العلمي') || undefined;
-      const brandName = pickField(row, 'brand_name', 'brand') || undefined;
+      const strength = isSupply
+        ? undefined
+        : pickField(row, 'strength', 'concentration', 'التركيز') || undefined;
+      const sku = pickField(row, 'sku', 'code', 'الرمز') || undefined;
+      const barcode = pickField(row, 'barcode', 'الباركود') || undefined;
+      const genericName =
+        pickField(row, 'generic_name', 'generic', 'الاسم_العلمي', 'الاسم العلمي') || undefined;
+      const brandName = pickField(row, 'brand_name', 'brand', 'الاسم_التجاري') || undefined;
       const description = pickField(row, 'description', 'الوصف') || undefined;
-      const minimumStock = Number(pickField(row, 'minimum_stock', 'min_stock') || '0') || 0;
-      const reorderQuantity = Number(pickField(row, 'reorder_quantity', 'reorder') || '0') || 0;
+      const minimumStock = Number(pickField(row, 'minimum_stock', 'min_stock', 'الحد_الأدنى') || '0') || 0;
+      const reorderQuantity =
+        Number(pickField(row, 'reorder_quantity', 'reorder', 'كمية_إعادة_الطلب') || '0') || 0;
 
       try {
         const existing = sku
@@ -354,6 +455,8 @@ export class MedicinesService {
             userId,
           );
           updated.push(name);
+          if (isSupply) updatedSupplies += 1;
+          else updatedMedicines += 1;
         } else {
           await this.create(
             {
@@ -373,6 +476,8 @@ export class MedicinesService {
             userId,
           );
           created.push(name);
+          if (isSupply) createdSupplies += 1;
+          else createdMedicines += 1;
         }
       } catch (error) {
         skipped.push({
@@ -391,7 +496,12 @@ export class MedicinesService {
         created: created.length,
         updated: updated.length,
         skipped: skipped.length,
+        createdMedicines,
+        createdSupplies,
+        updatedMedicines,
+        updatedSupplies,
         filename: file.originalname,
+        defaultItemType,
       },
     });
 
@@ -399,6 +509,10 @@ export class MedicinesService {
       created: created.length,
       updated: updated.length,
       skipped: skipped.length,
+      createdMedicines,
+      createdSupplies,
+      updatedMedicines,
+      updatedSupplies,
       details: { created, updated, skipped },
     };
   }

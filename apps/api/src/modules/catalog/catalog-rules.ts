@@ -2,6 +2,65 @@ import { DosageForm } from '@mh/shared';
 
 export const BARCODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9\-.]{5,31}$/;
 
+const DOSAGE_FORM_ALIASES: Record<string, DosageForm> = {
+  TABLET: DosageForm.TABLET,
+  TABLETS: DosageForm.TABLET,
+  TAB: DosageForm.TABLET,
+  قرص: DosageForm.TABLET,
+  أقراص: DosageForm.TABLET,
+  اقراص: DosageForm.TABLET,
+  CAPSULE: DosageForm.CAPSULE,
+  CAPSULES: DosageForm.CAPSULE,
+  CAP: DosageForm.CAPSULE,
+  كبسولة: DosageForm.CAPSULE,
+  كبسولات: DosageForm.CAPSULE,
+  SYRUP: DosageForm.SYRUP,
+  شراب: DosageForm.SYRUP,
+  SUSPENSION: DosageForm.SUSPENSION,
+  معلق: DosageForm.SUSPENSION,
+  INJECTION: DosageForm.INJECTION,
+  حقنة: DosageForm.INJECTION,
+  حقن: DosageForm.INJECTION,
+  CREAM: DosageForm.CREAM,
+  كريم: DosageForm.CREAM,
+  OINTMENT: DosageForm.OINTMENT,
+  مرهم: DosageForm.OINTMENT,
+  DROPS: DosageForm.DROPS,
+  قطرة: DosageForm.DROPS,
+  قطرات: DosageForm.DROPS,
+  INHALER: DosageForm.INHALER,
+  بخاخ: DosageForm.INHALER,
+  استنشاق: DosageForm.INHALER,
+  POWDER: DosageForm.POWDER,
+  مسحوق: DosageForm.POWDER,
+  OTHER: DosageForm.OTHER,
+  أخرى: DosageForm.OTHER,
+  اخرى: DosageForm.OTHER,
+  other: DosageForm.OTHER,
+};
+
+export function normalizeDosageForm(raw?: string | null, fallback: DosageForm = DosageForm.OTHER): DosageForm {
+  const value = (raw ?? '').trim();
+  if (!value) return fallback;
+  const upper = value.toUpperCase().replace(/\s+/g, '_');
+  if (Object.values(DosageForm).includes(upper as DosageForm)) {
+    return upper as DosageForm;
+  }
+  const byAlias = DOSAGE_FORM_ALIASES[upper] ?? DOSAGE_FORM_ALIASES[value] ?? DOSAGE_FORM_ALIASES[value.toLowerCase()];
+  return byAlias ?? fallback;
+}
+
+export function unitCodeFromName(name: string): string {
+  const ascii = name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+  if (ascii.length >= 2) return ascii.slice(0, 24);
+  const fallback = `U${Date.now().toString(36).toUpperCase()}`;
+  return fallback.slice(0, 24);
+}
+
 export function generateSku(name: string, strength?: string): string {
   const prefix = name.replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase().padEnd(4, 'X');
   const digits = (strength ?? '').replace(/\D/g, '').slice(0, 4) || '0000';

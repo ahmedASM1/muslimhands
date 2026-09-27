@@ -4,7 +4,9 @@ import {
   generateSku,
   isValidBarcode,
   nextSkuCandidate,
+  normalizeDosageForm,
   requiresStrength,
+  unitCodeFromName,
   validateBatchDates,
   validateMedicineNumbers,
 } from './catalog-rules';
@@ -26,6 +28,18 @@ describe('catalog rules', () => {
     expect(requiresStrength(DosageForm.OTHER)).toBe(false);
     expect(requiresStrength(DosageForm.TABLET, 'MEDICAL_SUPPLY')).toBe(false);
     expect(requiresStrength(DosageForm.TABLET, 'MEDICINE')).toBe(true);
+  });
+
+  it('normalizes dosage forms from English and Arabic labels', () => {
+    expect(normalizeDosageForm('قرص')).toBe(DosageForm.TABLET);
+    expect(normalizeDosageForm('كبسولة')).toBe(DosageForm.CAPSULE);
+    expect(normalizeDosageForm('syrup')).toBe(DosageForm.SYRUP);
+    expect(normalizeDosageForm('', DosageForm.OTHER)).toBe(DosageForm.OTHER);
+  });
+
+  it('builds a stable unit code from a display name', () => {
+    expect(unitCodeFromName('Box of 100')).toBe('BOX_OF_100');
+    expect(unitCodeFromName('علبة')).toMatch(/^U/i);
   });
 
   it('rejects negative medicine numbers', () => {

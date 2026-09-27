@@ -267,19 +267,31 @@ export default function MedicinesPage() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
-      return apiUpload<{ created: number; updated: number; skipped: number }>('/medicines/import', formData);
+      formData.append('defaultItemType', catalogMode);
+      return apiUpload<{
+        created: number;
+        updated: number;
+        skipped: number;
+        createdMedicines?: number;
+        createdSupplies?: number;
+        updatedMedicines?: number;
+        updatedSupplies?: number;
+      }>('/medicines/import', formData);
     },
     onSuccess: (result) => {
       toast.push(
-        t('inventory.medicines.importResult', {
+        t('inventory.medicines.importResultTyped', {
           created: result.created,
           updated: result.updated,
           skipped: result.skipped,
+          medicines: (result.createdMedicines ?? 0) + (result.updatedMedicines ?? 0),
+          supplies: (result.createdSupplies ?? 0) + (result.updatedSupplies ?? 0),
         }),
       );
       client.invalidateQueries({ queryKey: ['medicines'] });
       client.invalidateQueries({ queryKey: ['categories'] });
       client.invalidateQueries({ queryKey: ['categories-active'] });
+      client.invalidateQueries({ queryKey: ['units-active'] });
     },
     onError: (error) => toast.push((error as Error).message, 'error'),
   });
@@ -393,7 +405,11 @@ export default function MedicinesPage() {
         ) : null}
       </div>
 
-      {canCreate ? <p className="text-xs text-muted-foreground">{t('inventory.medicines.importHint')}</p> : null}
+      {canCreate ? (
+        <p className="text-xs text-muted-foreground">
+          {t(isSupplies ? 'inventory.supplies.importHint' : 'inventory.medicines.importHint')}
+        </p>
+      ) : null}
 
       <div className={`grid gap-2 ${isSupplies ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
         <Input

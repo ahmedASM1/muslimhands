@@ -24,27 +24,63 @@ export function normalizeCatalogItemType(raw?: string | null): string {
   if (!value) return CATALOG_ITEM_TYPE.MEDICINE;
 
   const upper = value.toUpperCase().replace(/\s+/g, '_');
-  if (upper === CATALOG_ITEM_TYPE.MEDICINE || upper === 'MEDICINES' || upper === 'DRUG' || upper === 'DRUGS') {
+  if (
+    upper === CATALOG_ITEM_TYPE.MEDICINE ||
+    upper === 'MEDICINES' ||
+    upper === 'DRUG' ||
+    upper === 'DRUGS' ||
+    upper === 'PHARMA' ||
+    upper === 'PHARMACEUTICAL' ||
+    upper === 'PHARMACEUTICALS'
+  ) {
     return CATALOG_ITEM_TYPE.MEDICINE;
   }
   if (
     upper === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY ||
     upper === 'MEDICAL_SUPPLIES' ||
     upper === 'SUPPLY' ||
-    upper === 'SUPPLIES'
+    upper === 'SUPPLIES' ||
+    upper === 'MED_SUPPLY' ||
+    upper === 'MED_SUPPLIES' ||
+    upper === 'CONSUMABLE' ||
+    upper === 'CONSUMABLES' ||
+    upper === 'DEVICE' ||
+    upper === 'DEVICES'
   ) {
     return CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
   }
 
   const lower = value.toLowerCase();
-  if (lower.includes('دواء') || lower.includes('أدوية') || lower.includes('ادوية')) {
+  if (
+    lower.includes('دواء') ||
+    lower.includes('أدوية') ||
+    lower.includes('ادوية') ||
+    lower.includes('دوائي')
+  ) {
     return CATALOG_ITEM_TYPE.MEDICINE;
   }
-  if (lower.includes('مستلزم') || lower.includes('شاش') || lower.includes('supply')) {
+  if (
+    lower.includes('مستلزم') ||
+    lower.includes('مستلزمات') ||
+    lower.includes('شاش') ||
+    lower.includes('قفاز') ||
+    lower.includes('محقن') ||
+    lower.includes('ضماد') ||
+    lower.includes('supply') ||
+    lower.includes('consumable')
+  ) {
     return CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
   }
 
   return upper.replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || CATALOG_ITEM_TYPE.MEDICINE;
+}
+
+/** Human label for a system catalog type (used when disambiguating category names). */
+export function catalogItemTypeLabel(itemType: string, locale: 'en' | 'ar' = 'en'): string {
+  const normalized = normalizeCatalogItemType(itemType);
+  const found = SYSTEM_CATALOG_ITEM_TYPES.find((item) => item.code === normalized);
+  if (found) return locale === 'ar' ? found.labelAr : found.labelEn;
+  return normalized;
 }
 
 export function isMedicineItemType(itemType?: string | null): boolean {

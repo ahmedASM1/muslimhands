@@ -1063,8 +1063,9 @@
       "batchMfg": " · تصنيع {{date}}",
       "confirmDeactivate": "إلغاء تفعيل هذا الدواء؟",
       "confirmActivate": "تفعيل هذا الدواء؟",
-      "importHint": "أعمدة CSV/Excel: name, category, unit, strength, dosage_form, sku, barcode, generic_name, item_type",
+      "importHint": "أعمدة CSV/Excel: name, category, unit, item_type (MEDICINE أو MEDICAL_SUPPLY)، strength, dosage_form, sku, barcode, generic_name. يُوجَّه كل صف حسب النوع — الأدوية إلى الأدوية والمستلزمات إلى المستلزمات. التصنيفات والوحدات الناقصة تُنشأ تلقائياً.",
       "importResult": "انتهى الاستيراد: {{created}} أُنشئ، {{updated}} حُدّث، {{skipped}} تُخطّي.",
+      "importResultTyped": "انتهى الاستيراد: {{created}} أُنشئ، {{updated}} حُدّث، {{skipped}} تُخطّي · أدوية: {{medicines}} · مستلزمات: {{supplies}}.",
       "strengthRequiredHint": "التركيز مطلوب لهذا الشكل الدوائي (مثل 500mg).",
       "validation": {
         "nameRequired": "الاسم مطلوب",
@@ -1088,7 +1089,8 @@
       "title": "مستلزمات طبية",
       "subtitle": "فهرس المستلزمات الطبية (قفازات، محاقن، ضمادات، إلخ). يُدار المخزون عبر المستودع والصيدلية.",
       "empty": "لم تُضف أي مستلزمات طبية بعد.",
-      "dosageHint": "الشكل الصيدلاني ثابت على «أخرى» للمستلزمات الطبية."
+      "dosageHint": "الشكل الصيدلاني ثابت على «أخرى» للمستلزمات الطبية.",
+      "importHint": "أعمدة CSV/Excel: name, category, unit, item_type=MEDICAL_SUPPLY (أو اتركه فارغاً في هذه الصفحة)، sku, barcode. تُحفظ البنود ضمن المستلزمات الطبية؛ التصنيفات والوحدات الناقصة تُنشأ تلقائياً."
     },
     "batches": {
       "title": "الدفعات",

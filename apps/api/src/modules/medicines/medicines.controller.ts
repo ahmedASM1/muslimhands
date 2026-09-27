@@ -183,12 +183,16 @@ export class MedicinesController {
   @ApiBody({
     schema: {
       type: 'object',
-      properties: { file: { type: 'string', format: 'binary' } },
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        defaultItemType: { type: 'string', example: 'MEDICINE' },
+      },
     },
   })
   @UseInterceptors(FileInterceptor('file'))
   import(
     @UploadedFile() file: UploadedSpreadsheet | undefined,
+    @Body('defaultItemType') defaultItemType: string | undefined,
     @CurrentUser() user: RequestUser,
   ) {
     if (!file) {
@@ -197,6 +201,7 @@ export class MedicinesController {
     return this.service.importFromFile(
       { buffer: file.buffer, originalname: file.originalname },
       user.id,
+      { defaultItemType },
     );
   }
 

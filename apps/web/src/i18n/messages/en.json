@@ -1063,8 +1063,9 @@
       "batchMfg": " · mfg {{date}}",
       "confirmDeactivate": "Deactivate this medicine?",
       "confirmActivate": "Activate this medicine?",
-      "importHint": "CSV/Excel columns: name, category, unit, strength, dosage_form, sku, barcode, generic_name, item_type",
+      "importHint": "CSV/Excel columns: name, category, unit, item_type (MEDICINE or MEDICAL_SUPPLY), strength, dosage_form, sku, barcode, generic_name. Rows are routed by item_type — medicines and medical supplies go to their own sections. Missing categories/units are created automatically.",
       "importResult": "Import finished: {{created}} created, {{updated}} updated, {{skipped}} skipped.",
+      "importResultTyped": "Import finished: {{created}} created, {{updated}} updated, {{skipped}} skipped · medicines: {{medicines}} · medical supplies: {{supplies}}.",
       "strengthRequiredHint": "Strength is required for this dosage form (e.g. 500mg).",
       "validation": {
         "nameRequired": "Name is required",
@@ -1088,7 +1089,8 @@
       "title": "Medical Supplies",
       "subtitle": "Catalog of medical supplies (gloves, syringes, dressings, etc.). Stock is managed by warehouse and pharmacy inventory.",
       "empty": "No medical supplies have been added yet.",
-      "dosageHint": "Dosage form is fixed to Other for medical supplies."
+      "dosageHint": "Dosage form is fixed to Other for medical supplies.",
+      "importHint": "CSV/Excel columns: name, category, unit, item_type=MEDICAL_SUPPLY (or leave blank on this page), sku, barcode. Items are filed under Medical Supplies; missing categories/units are created automatically."
     },
     "batches": {
       "title": "Batches",
