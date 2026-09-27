@@ -64,16 +64,23 @@ export default function UnitsPage() {
   });
 
   const save = useMutation({
-    mutationFn: () =>
-      editing
-        ? apiRequest(`/units/${editing.id}`, { method: 'PATCH', body: form })
-        : apiRequest('/units', { method: 'POST', body: form }),
+    mutationFn: () => {
+      const body = {
+        name: form.name.trim(),
+        code: form.code.trim(),
+        ...(form.description.trim() ? { description: form.description.trim() } : {}),
+      };
+      return editing
+        ? apiRequest(`/units/${editing.id}`, { method: 'PATCH', body })
+        : apiRequest('/units', { method: 'POST', body });
+    },
     onSuccess: () => {
       toast.push(editing ? t('toasts.unitUpdated') : t('toasts.unitCreated'));
       setOpen(false);
       setEditing(null);
       setForm({ name: '', code: '', description: '' });
       client.invalidateQueries({ queryKey: ['units'] });
+      client.invalidateQueries({ queryKey: ['units-active'] });
     },
     onError: (error) => toast.push((error as Error).message, 'error'),
   });

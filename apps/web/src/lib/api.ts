@@ -126,8 +126,10 @@ export async function apiList<T>(path: string): Promise<{ items: T[]; meta?: Pag
     const error = payload && !payload.success ? payload.error : undefined;
     throw new ApiClientError(error?.message ?? 'Request failed', response.status, error?.code);
   }
+  const data = (payload as ApiSuccessResponse<T[] | { items: T[] }>).data;
+  const items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
   return {
-    items: (payload as ApiSuccessResponse<T[]>).data,
+    items,
     meta: (payload as ApiSuccessResponse<T[]>).meta,
   };
 }

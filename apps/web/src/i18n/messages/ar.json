@@ -364,6 +364,19 @@
     "warehouseOperations": "عمليات المستودع",
     "pharmacyOperations": "عمليات الصيدلية"
   },
+  "dosageForms": {
+    "TABLET": "قرص",
+    "CAPSULE": "كبسولة",
+    "SYRUP": "شراب",
+    "SUSPENSION": "معلق",
+    "INJECTION": "حقنة",
+    "CREAM": "كريم",
+    "OINTMENT": "مرهم",
+    "DROPS": "قطرات",
+    "INHALER": "بخاخ",
+    "POWDER": "مسحوق",
+    "OTHER": "أخرى"
+  },
   "status": {
     "IN_STOCK": "متوفر",
     "LOW_STOCK": "منخفض",

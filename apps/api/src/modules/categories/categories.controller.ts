@@ -11,7 +11,6 @@
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { memoryStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
@@ -22,6 +21,11 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { RequestUser } from '../../common/types/authenticated-request';
 import { CategoriesService, CategoryQueryDto } from './categories.service';
+
+type UploadedSpreadsheet = {
+  buffer: Buffer;
+  originalname: string;
+};
 
 class CategoryDto {
   @IsString()
@@ -97,9 +101,9 @@ export class CategoriesController {
       properties: { file: { type: 'string', format: 'binary' } },
     },
   })
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @UseInterceptors(FileInterceptor('file'))
   import(
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFile() file: UploadedSpreadsheet | undefined,
     @CurrentUser() user: RequestUser,
   ) {
     if (!file) {

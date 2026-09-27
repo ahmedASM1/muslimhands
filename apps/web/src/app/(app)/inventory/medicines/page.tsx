@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiList, apiRequest, apiUpload } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { DOSAGE_FORMS, formatLabel } from '@/lib/catalog';
+import { DOSAGE_FORMS, dosageFormLabel } from '@/lib/catalog';
 import { hasPermission } from '@/lib/permissions';
 import { useToast } from '@/lib/toast';
 
@@ -327,7 +327,7 @@ export default function MedicinesPage() {
         <select className="h-10 rounded-md border px-3 text-sm" value={dosageForm} onChange={(event) => { setDosageForm(event.target.value); setPage(1); }}>
           <option value="">{t('inventory.medicines.allDosageForms')}</option>
           {DOSAGE_FORMS.map((item) => (
-            <option key={item} value={item}>{formatLabel(item)}</option>
+            <option key={item} value={item}>{dosageFormLabel(t, item)}</option>
           ))}
         </select>
       </div>
@@ -362,7 +362,7 @@ export default function MedicinesPage() {
                   </td>
                   <td className="px-3 py-2">{row.genericName || emDash}</td>
                   <td className="px-3 py-2">{row.strength || emDash}</td>
-                  <td className="px-3 py-2">{formatLabel(row.dosageForm)}</td>
+                  <td className="px-3 py-2">{dosageFormLabel(t, row.dosageForm)}</td>
                   <td className="px-3 py-2">{row.category?.name ?? emDash}</td>
                   <td className="px-3 py-2">{row.unit?.name ?? emDash}</td>
                   <td className="px-3 py-2">{row.sku}</td>
@@ -440,47 +440,66 @@ export default function MedicinesPage() {
           </section>
           <section className="space-y-3">
             <h2 className="text-sm font-semibold">{t('inventory.medicines.classification')}</h2>
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1">
-                <Label>{t('table.category')}</Label>
-                <select className="h-10 w-full rounded-md border px-3 text-sm" {...form.register('categoryId')}>
+                <Label htmlFor="medicine-category">{t('table.category')}</Label>
+                <select
+                  id="medicine-category"
+                  className="h-10 w-full rounded-md border px-3 text-sm"
+                  {...form.register('categoryId')}
+                >
                   <option value="">{t('common.selectCategory')}</option>
                   {(categories.data?.items ?? []).map((item) => (
                     <option key={item.id} value={item.id}>{item.name}</option>
                   ))}
                 </select>
+                {categories.isError ? (
+                  <p className="text-sm text-destructive">{(categories.error as Error).message}</p>
+                ) : null}
                 {form.formState.errors.categoryId ? <p className="text-sm text-destructive">{form.formState.errors.categoryId.message}</p> : null}
               </div>
               <div className="space-y-1">
-                <Label>{t('table.dosageForm')}</Label>
-                <select className="h-10 w-full rounded-md border px-3 text-sm" {...form.register('dosageForm')}>
+                <Label htmlFor="medicine-unit">{t('table.unit')}</Label>
+                <select
+                  id="medicine-unit"
+                  className="h-10 w-full rounded-md border px-3 text-sm"
+                  {...form.register('unitId')}
+                >
+                  <option value="">{t('common.selectUnit')}</option>
+                  {(units.data?.items ?? []).map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+                {units.isError ? (
+                  <p className="text-sm text-destructive">{(units.error as Error).message}</p>
+                ) : null}
+                {form.formState.errors.unitId ? <p className="text-sm text-destructive">{form.formState.errors.unitId.message}</p> : null}
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="medicine-dosage">{t('table.dosageForm')}</Label>
+                <select
+                  id="medicine-dosage"
+                  className="h-10 w-full rounded-md border px-3 text-sm"
+                  {...form.register('dosageForm')}
+                >
                   {DOSAGE_FORMS.map((item) => (
-                    <option key={item} value={item}>{formatLabel(item)}</option>
+                    <option key={item} value={item}>{dosageFormLabel(t, item)}</option>
                   ))}
                 </select>
               </div>
               <div className="space-y-1">
-                <Label>
+                <Label htmlFor="medicine-strength">
                   {t('table.strength')}
                   {strengthRequired ? ' *' : ''}
                 </Label>
                 <Input
+                  id="medicine-strength"
                   {...form.register('strength')}
                   placeholder={strengthRequired ? t('inventory.medicines.strengthPlaceholder') : t('common.optional')}
                 />
                 {strengthRequired ? (
                   <p className="text-xs text-muted-foreground">{t('inventory.medicines.strengthRequiredHint')}</p>
                 ) : null}
-              </div>
-              <div className="space-y-1">
-                <Label>{t('table.unit')}</Label>
-                <select className="h-10 w-full rounded-md border px-3 text-sm" {...form.register('unitId')}>
-                  <option value="">{t('common.selectUnit')}</option>
-                  {(units.data?.items ?? []).map((item) => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-                {form.formState.errors.unitId ? <p className="text-sm text-destructive">{form.formState.errors.unitId.message}</p> : null}
               </div>
             </div>
           </section>

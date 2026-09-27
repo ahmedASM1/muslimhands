@@ -2,7 +2,6 @@
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { memoryStorage } from 'multer';
 import {
   IsBoolean,
   IsEnum,
@@ -21,6 +20,11 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import type { RequestUser } from '../../common/types/authenticated-request';
 import { MedicinesService, MedicineQueryDto } from './medicines.service';
+
+type UploadedSpreadsheet = {
+  buffer: Buffer;
+  originalname: string;
+};
 
 class MedicineDto {
   @IsUUID()
@@ -182,9 +186,9 @@ export class MedicinesController {
       properties: { file: { type: 'string', format: 'binary' } },
     },
   })
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @UseInterceptors(FileInterceptor('file'))
   import(
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFile() file: UploadedSpreadsheet | undefined,
     @CurrentUser() user: RequestUser,
   ) {
     if (!file) {

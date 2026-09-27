@@ -364,6 +364,19 @@
     "warehouseOperations": "Warehouse operations",
     "pharmacyOperations": "Pharmacy operations"
   },
+  "dosageForms": {
+    "TABLET": "Tablet",
+    "CAPSULE": "Capsule",
+    "SYRUP": "Syrup",
+    "SUSPENSION": "Suspension",
+    "INJECTION": "Injection",
+    "CREAM": "Cream",
+    "OINTMENT": "Ointment",
+    "DROPS": "Drops",
+    "INHALER": "Inhaler",
+    "POWDER": "Powder",
+    "OTHER": "Other"
+  },
   "status": {
     "IN_STOCK": "In stock",
     "LOW_STOCK": "Low stock",

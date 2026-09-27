@@ -41,8 +41,13 @@ export function FormModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-10 sm:pt-16">
-      <button type="button" className="absolute inset-0 cursor-default" aria-label={t('common.close')} onClick={onClose} />
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto p-4 pt-10 sm:pt-16">
+      <button
+        type="button"
+        className="absolute inset-0 z-0 bg-black/45"
+        aria-label={t('common.close')}
+        onClick={onClose}
+      />
       <div
         role="dialog"
         aria-modal="true"
@@ -51,6 +56,7 @@ export function FormModal({
           'relative z-10 mb-10 w-full max-w-3xl rounded-xl border bg-background p-4 shadow-2xl sm:p-6',
           className,
         )}
+        onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <h2 className="text-lg font-semibold">{title}</h2>

@@ -106,8 +106,8 @@ export default function CategoriesPage() {
   const save = useMutation({
     mutationFn: () => {
       const body = {
-        name: form.name,
-        description: form.description || undefined,
+        name: form.name.trim(),
+        ...(form.description.trim() ? { description: form.description.trim() } : {}),
         itemType: resolvedItemType(),
       };
       return editing
@@ -122,6 +122,7 @@ export default function CategoriesPage() {
       setTypeSelect('MEDICINE');
       client.invalidateQueries({ queryKey: ['categories'] });
       client.invalidateQueries({ queryKey: ['categories-active'] });
+      client.invalidateQueries({ queryKey: ['categories-options'] });
       client.invalidateQueries({ queryKey: ['category-item-types'] });
     },
     onError: (error) => toast.push((error as Error).message, 'error'),

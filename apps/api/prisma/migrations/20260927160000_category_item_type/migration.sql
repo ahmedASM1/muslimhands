@@ -7,20 +7,9 @@ CREATE INDEX IF NOT EXISTS "medicine_categories_item_type_idx" ON "medicine_cate
 -- Backfill medical supplies category if present
 UPDATE "medicine_categories"
 SET "item_type" = 'MEDICAL_SUPPLY'
-WHERE lower(name) LIKE '%medical%supplies%' OR lower(name) LIKE '%مستلزم%';
+WHERE lower(name) LIKE '%medical%supplies%';
 
--- AlterEnum
-DO $$ BEGIN
-  ALTER TYPE "AuditAction" ADD VALUE 'IMPORT_CATEGORIES';
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-  ALTER TYPE "AuditAction" ADD VALUE 'IMPORT_MEDICINES';
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-  ALTER TYPE "AuditAction" ADD VALUE 'PURGE_DATA';
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
+-- AlterEnum (PostgreSQL 15+ supports IF NOT EXISTS)
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'IMPORT_CATEGORIES';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'IMPORT_MEDICINES';
+ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'PURGE_DATA';
