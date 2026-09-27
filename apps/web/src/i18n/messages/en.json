@@ -928,6 +928,8 @@
     "createRequest": "Create supply request",
     "requestDetails": "Request details",
     "medicines": "Medicines",
+    "items": "Request items",
+    "itemsHint": "Add medicines and medical supplies in the same request. Choose the category for each line.",
     "requestedQty": "Requested qty",
     "requested": "Requested",
     "approved": "Approved",

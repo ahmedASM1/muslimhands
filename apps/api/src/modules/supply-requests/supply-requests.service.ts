@@ -393,7 +393,16 @@ export class SupplyRequestsService {
       warehouse: true,
       createdBy: { select: { firstName: true, lastName: true, email: true } },
       reviewedBy: { select: { firstName: true, lastName: true, email: true } },
-      items: { include: { medicine: { include: { unit: true } } } },
+      items: {
+        include: {
+          medicine: {
+            include: {
+              unit: true,
+              category: { select: { id: true, name: true, itemType: true } },
+            },
+          },
+        },
+      },
       transfers: { select: { id: true, transferNumber: true, status: true } },
     } as const;
   }

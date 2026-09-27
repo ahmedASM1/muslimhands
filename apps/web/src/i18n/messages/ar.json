@@ -928,6 +928,8 @@
     "createRequest": "إنشاء طلب توريد",
     "requestDetails": "تفاصيل الطلب",
     "medicines": "الأدوية",
+    "items": "بنود الطلب",
+    "itemsHint": "أضف أدوية ومستلزمات طبية في نفس الطلب. اختر الفئة لكل بند.",
     "requestedQty": "الكمية المطلوبة",
     "requested": "المطلوب",
     "approved": "المعتمد",

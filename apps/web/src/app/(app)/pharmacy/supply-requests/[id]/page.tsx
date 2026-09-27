@@ -27,7 +27,11 @@ interface SupplyRequest {
     approvedQty?: number | null;
     fulfilledQty?: number;
     notes?: string | null;
-    medicine?: { name: string; unit?: { code: string } };
+    medicine?: {
+      name: string;
+      unit?: { code: string };
+      category?: { itemType?: string | null };
+    };
   }>;
   transfers?: Array<{ id: string; transferNumber: string; status: string }>;
 }
@@ -100,7 +104,8 @@ export default function PharmacySupplyRequestDetailPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-muted/40 text-left">
                   <tr>
-                    <th className="px-3 py-2">{t('table.medicine')}</th>
+                    <th className="px-3 py-2">{t('dispensing.category')}</th>
+                    <th className="px-3 py-2">{t('table.items')}</th>
                     <th className="px-3 py-2">{t('supply.requested')}</th>
                     <th className="px-3 py-2">{t('supply.approved')}</th>
                     <th className="px-3 py-2">{t('supply.fulfilled')}</th>
@@ -108,15 +113,23 @@ export default function PharmacySupplyRequestDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {row.items.map((item) => (
-                    <tr key={item.id} className="border-t">
-                      <td className="px-3 py-2">{item.medicine?.name}</td>
-                      <td className="px-3 py-2">{item.requestedQty}</td>
-                      <td className="px-3 py-2">{item.approvedQty ?? dash}</td>
-                      <td className="px-3 py-2">{item.fulfilledQty ?? 0}</td>
-                      <td className="px-3 py-2">{item.notes ?? dash}</td>
-                    </tr>
-                  ))}
+                  {row.items.map((item) => {
+                    const itemType = item.medicine?.category?.itemType;
+                    const typeLabel =
+                      itemType === 'MEDICAL_SUPPLY'
+                        ? t('catalogTypes.MEDICAL_SUPPLY')
+                        : t('catalogTypes.MEDICINE');
+                    return (
+                      <tr key={item.id} className="border-t">
+                        <td className="px-3 py-2">{typeLabel}</td>
+                        <td className="px-3 py-2">{item.medicine?.name}</td>
+                        <td className="px-3 py-2">{item.requestedQty}</td>
+                        <td className="px-3 py-2">{item.approvedQty ?? dash}</td>
+                        <td className="px-3 py-2">{item.fulfilledQty ?? 0}</td>
+                        <td className="px-3 py-2">{item.notes ?? dash}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </CardContent>

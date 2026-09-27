@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CATALOG_ITEM_TYPE } from '@mh/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,11 +15,14 @@ import { hasPermission } from '@/lib/permissions';
 import { useToast } from '@/lib/toast';
 import { useI18n } from '@/i18n';
 
+type CatalogMode = typeof CATALOG_ITEM_TYPE.MEDICINE | typeof CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
+
 interface MedicineOption {
   id: string;
   name: string;
   isActive: boolean;
   unit?: { code: string };
+  category?: { itemType?: string | null };
 }
 
 interface RequestItem {
@@ -46,12 +50,24 @@ interface SupplyRequest {
 }
 
 interface DraftItem {
+  catalogType: CatalogMode;
   medicineId: string;
   requestedQty: string;
   notes: string;
 }
 
-const emptyItem = (): DraftItem => ({ medicineId: '', requestedQty: '100', notes: '' });
+const emptyItem = (catalogType: CatalogMode = CATALOG_ITEM_TYPE.MEDICINE): DraftItem => ({
+  catalogType,
+  medicineId: '',
+  requestedQty: '100',
+  notes: '',
+});
+
+function resolveCatalogType(itemType?: string | null): CatalogMode {
+  return itemType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
+    ? CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
+    : CATALOG_ITEM_TYPE.MEDICINE;
+}
 
 export default function PharmacySupplyRequestsPage() {
   const { t } = useI18n();
@@ -84,13 +100,28 @@ export default function PharmacySupplyRequestsPage() {
     queryFn: () => apiRequest<Array<{ id: string; name: string; code: string }>>('/warehouses'),
   });
   const medicines = useQuery({
-    queryKey: ['medicines-sr'],
-    queryFn: () => apiList<MedicineOption>('/medicines?limit=100&isActive=true'),
+    queryKey: ['medicines-sr', CATALOG_ITEM_TYPE.MEDICINE],
+    queryFn: () =>
+      apiList<MedicineOption>(
+        `/medicines?limit=100&isActive=true&itemType=${encodeURIComponent(CATALOG_ITEM_TYPE.MEDICINE)}`,
+      ),
+  });
+  const medicalSupplies = useQuery({
+    queryKey: ['medicines-sr', CATALOG_ITEM_TYPE.MEDICAL_SUPPLY],
+    queryFn: () =>
+      apiList<MedicineOption>(
+        `/medicines?limit=100&isActive=true&itemType=${encodeURIComponent(CATALOG_ITEM_TYPE.MEDICAL_SUPPLY)}`,
+      ),
   });
   const requests = useQuery({
     queryKey: ['supply-requests', params],
     queryFn: () => apiList<SupplyRequest>(`/supply-requests?${params}`),
   });
+
+  const optionsFor = (catalogType: CatalogMode) =>
+    (catalogType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
+      ? medicalSupplies.data?.items
+      : medicines.data?.items) ?? [];
 
   useEffect(() => {
     if (prefillApplied || !canCreate) return;
@@ -98,14 +129,25 @@ export default function PharmacySupplyRequestsPage() {
     const query = new URLSearchParams(window.location.search);
     const wantsCreate = query.get('create') === '1';
     const medicineId = query.get('medicineId');
+    const itemType = query.get('itemType');
     if (!wantsCreate && !medicineId) return;
     if (!warehouses.data?.length) return;
+    if (medicineId && (medicines.isLoading || medicalSupplies.isLoading)) return;
+
+    let catalogType = resolveCatalogType(itemType);
+    if (medicineId) {
+      const inSupplies = (medicalSupplies.data?.items ?? []).some((m) => m.id === medicineId);
+      const inMedicines = (medicines.data?.items ?? []).some((m) => m.id === medicineId);
+      if (inSupplies) catalogType = CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
+      else if (inMedicines) catalogType = CATALOG_ITEM_TYPE.MEDICINE;
+    }
 
     setEditingId(null);
     setWarehouseId(warehouses.data[0]?.id ?? '');
     setNotes(medicineId ? t('supply.prefillNotes') : '');
     setItems([
       {
+        catalogType,
         medicineId: medicineId ?? '',
         requestedQty: '100',
         notes: medicineId ? t('supply.prefillItemNotes') : '',
@@ -113,7 +155,16 @@ export default function PharmacySupplyRequestsPage() {
     ]);
     setMode('create');
     setPrefillApplied(true);
-  }, [canCreate, prefillApplied, warehouses.data, t]);
+  }, [
+    canCreate,
+    prefillApplied,
+    warehouses.data,
+    medicines.data,
+    medicalSupplies.data,
+    medicines.isLoading,
+    medicalSupplies.isLoading,
+    t,
+  ]);
 
   useEffect(() => {
     if ((mode !== 'create' && mode !== 'edit') || warehouseId) return;
@@ -180,6 +231,7 @@ export default function PharmacySupplyRequestsPage() {
     setNotes(row.notes ?? '');
     setItems(
       row.items.map((item) => ({
+        catalogType: resolveCatalogType(item.medicine?.category?.itemType),
         medicineId: item.medicineId,
         requestedQty: String(item.requestedQty),
         notes: item.notes ?? '',
@@ -241,62 +293,126 @@ export default function PharmacySupplyRequestsPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{t('supply.medicines')}</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => setItems((prev) => [...prev, emptyItem()])}>
+            <div>
+              <CardTitle>{t('supply.items')}</CardTitle>
+              <p className="text-sm text-muted-foreground">{t('supply.itemsHint')}</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const hasSupply = items.some(
+                  (row) => row.catalogType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY,
+                );
+                setItems((prev) => [
+                  ...prev,
+                  emptyItem(
+                    hasSupply ? CATALOG_ITEM_TYPE.MEDICINE : CATALOG_ITEM_TYPE.MEDICAL_SUPPLY,
+                  ),
+                ]);
+              }}
+            >
               {t('actions.addItem')}
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {items.map((item, index) => (
-              <div key={index} className="grid gap-2 rounded-md border p-3 md:grid-cols-4">
-                <div className="grid gap-1 md:col-span-2">
-                  <Label>{t('table.medicine')}</Label>
-                  <select
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    value={item.medicineId}
-                    onChange={(e) =>
-                      setItems((prev) =>
-                        prev.map((row, i) => (i === index ? { ...row, medicineId: e.target.value } : row)),
-                      )
-                    }
-                  >
-                    <option value="">{t('warehouse.select')}</option>
-                    {(medicines.data?.items ?? []).filter((m) => m.isActive).map((m) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
+            {items.map((item, index) => {
+              const isSupplies = item.catalogType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
+              const options = optionsFor(item.catalogType).filter((m) => m.isActive);
+              return (
+                <div key={index} className="grid gap-2 rounded-md border p-3 md:grid-cols-5">
+                  <div className="grid gap-1">
+                    <Label>{t('dispensing.category')}</Label>
+                    <select
+                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      value={item.catalogType}
+                      onChange={(e) =>
+                        setItems((prev) =>
+                          prev.map((row, i) =>
+                            i === index
+                              ? {
+                                  ...row,
+                                  catalogType: e.target.value as CatalogMode,
+                                  medicineId: '',
+                                }
+                              : row,
+                          ),
+                        )
+                      }
+                    >
+                      <option value={CATALOG_ITEM_TYPE.MEDICINE}>
+                        {t('catalogTypes.MEDICINE')}
+                      </option>
+                      <option value={CATALOG_ITEM_TYPE.MEDICAL_SUPPLY}>
+                        {t('catalogTypes.MEDICAL_SUPPLY')}
+                      </option>
+                    </select>
+                  </div>
+                  <div className="grid gap-1 md:col-span-2">
+                    <Label>{isSupplies ? t('table.supply') : t('table.medicine')}</Label>
+                    <select
+                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      value={item.medicineId}
+                      onChange={(e) =>
+                        setItems((prev) =>
+                          prev.map((row, i) =>
+                            i === index ? { ...row, medicineId: e.target.value } : row,
+                          ),
+                        )
+                      }
+                    >
+                      <option value="">
+                        {t(
+                          isSupplies ? 'dispensing.selectSupply' : 'dispensing.selectMedicine',
+                        )}
+                      </option>
+                      {options.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid gap-1">
+                    <Label>{t('supply.requestedQty')}</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={item.requestedQty}
+                      onChange={(e) =>
+                        setItems((prev) =>
+                          prev.map((row, i) =>
+                            i === index ? { ...row, requestedQty: e.target.value } : row,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label>{t('table.notes')}</Label>
+                    <Input
+                      value={item.notes}
+                      onChange={(e) =>
+                        setItems((prev) =>
+                          prev.map((row, i) =>
+                            i === index ? { ...row, notes: e.target.value } : row,
+                          ),
+                        )
+                      }
+                    />
+                    {items.length > 1 ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
+                      >
+                        {t('actions.remove')}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="grid gap-1">
-                  <Label>{t('supply.requestedQty')}</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={item.requestedQty}
-                    onChange={(e) =>
-                      setItems((prev) =>
-                        prev.map((row, i) => (i === index ? { ...row, requestedQty: e.target.value } : row)),
-                      )
-                    }
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label>{t('table.notes')}</Label>
-                  <Input
-                    value={item.notes}
-                    onChange={(e) =>
-                      setItems((prev) =>
-                        prev.map((row, i) => (i === index ? { ...row, notes: e.target.value } : row)),
-                      )
-                    }
-                  />
-                  {items.length > 1 ? (
-                    <Button size="sm" variant="ghost" onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}>
-                      {t('actions.remove')}
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+              );
+            })}
             <Button onClick={() => save.mutate()} disabled={save.isPending}>
               {t('actions.saveDraft')}
             </Button>

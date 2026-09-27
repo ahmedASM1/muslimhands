@@ -23,7 +23,7 @@ interface SupplyRequest {
     requestedQty: number;
     approvedQty?: number | null;
     fulfilledQty?: number;
-    medicine?: { name: string };
+    medicine?: { name: string; category?: { itemType?: string | null } };
   }>;
 }
 
@@ -89,7 +89,8 @@ export default function WarehouseSupplyRequestDetailPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-muted/40 text-left">
                   <tr>
-                    <th className="px-3 py-2">{t('table.medicine')}</th>
+                    <th className="px-3 py-2">{t('dispensing.category')}</th>
+                    <th className="px-3 py-2">{t('table.items')}</th>
                     <th className="px-3 py-2">{t('supply.requested')}</th>
                     <th className="px-3 py-2">{t('supply.approved')}</th>
                     <th className="px-3 py-2">{t('supply.fulfilled')}</th>
@@ -98,6 +99,11 @@ export default function WarehouseSupplyRequestDetailPage() {
                 <tbody>
                   {row.items.map((item) => (
                     <tr key={item.id} className="border-t">
+                      <td className="px-3 py-2">
+                        {item.medicine?.category?.itemType === 'MEDICAL_SUPPLY'
+                          ? t('catalogTypes.MEDICAL_SUPPLY')
+                          : t('catalogTypes.MEDICINE')}
+                      </td>
                       <td className="px-3 py-2">{item.medicine?.name}</td>
                       <td className="px-3 py-2">{item.requestedQty}</td>
                       <td className="px-3 py-2">{item.approvedQty ?? dash}</td>
