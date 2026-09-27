@@ -74,7 +74,11 @@ describe('SupplyRequestsService', () => {
     supplyRequestItem: { deleteMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   };
   const audit = { record: jest.fn() };
-  const notifications = { notifyRole: jest.fn() };
+  const notifications = {
+    notifyRole: jest.fn(),
+    notifyRoles: jest.fn().mockResolvedValue({ notified: 1 }),
+    resolveByDedupeKey: jest.fn().mockResolvedValue(1),
+  };
   const service = new SupplyRequestsService(prisma as never, audit as never, notifications as never);
 
   beforeEach(() => {
@@ -129,6 +133,12 @@ describe('SupplyRequestsService', () => {
     await service.submit('sr-1', authUser(RoleCode.PHARMACY_MANAGER));
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'SUBMIT_SUPPLY_REQUEST' }),
+    );
+    expect(notifications.notifyRoles).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        dedupeKey: 'PENDING_SUPPLY_REQUEST:sr-1',
+      }),
     );
   });
 
@@ -185,7 +195,16 @@ describe('TransfersService two-step custody', () => {
   };
   const inventoryTx = { transferOut: jest.fn(), transferIn: jest.fn() };
   const audit = { record: jest.fn() };
-  const service = new TransfersService(prisma as never, inventoryTx as never, audit as never);
+  const notifications = {
+    notifyRoles: jest.fn().mockResolvedValue({ notified: 1 }),
+    resolveByDedupeKey: jest.fn().mockResolvedValue(1),
+  };
+  const service = new TransfersService(
+    prisma as never,
+    inventoryTx as never,
+    audit as never,
+    notifications as never,
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -250,12 +269,26 @@ describe('TransfersService two-step custody', () => {
       supplyRequestId: null,
       items: [{ id: 'ti-1', medicineId: 'med-1', batchId: 'batch-1', quantity: 10, notes: null }],
     });
-    prisma.stockTransfer.update.mockResolvedValue({ id: 'tr-1', status: 'SHIPPED', items: [] });
+    prisma.stockTransfer.update.mockResolvedValue({
+      id: 'tr-1',
+      status: 'SHIPPED',
+      transferNumber: 'TR-1',
+      pharmacyId: 'ph-1',
+      warehouseId: 'wh-1',
+      items: [],
+    });
     inventoryTx.transferOut.mockResolvedValue(90);
 
     await service.ship('tr-1', authUser(RoleCode.WAREHOUSE_MANAGER));
     expect(inventoryTx.transferOut).toHaveBeenCalledTimes(1);
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'SHIP_TRANSFER' }));
+    expect(notifications.notifyRoles).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        dedupeKey: 'TRANSFER_AWAITING_RECEIPT:tr-1',
+        pharmacyId: 'ph-1',
+      }),
+    );
 
     await expect(service.ship('tr-1', authUser(RoleCode.WAREHOUSE_MANAGER))).rejects.toBeInstanceOf(
       ConflictException,

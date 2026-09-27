@@ -5,7 +5,12 @@
   NotFoundException,
 } from '@nestjs/common';
 import { AuditAction, RoleCode, type AuthenticatedUser } from '@mh/shared';
-import { Prisma, SupplyRequestStatus } from '@prisma/client';
+import {
+  NotificationSeverity,
+  NotificationType,
+  Prisma,
+  SupplyRequestStatus,
+} from '@prisma/client';
 import { IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { requirePharmacyId, resolvePharmacyId } from '../../common/access/access';
 import { nextDocumentNumber } from '../../common/inventory/document-numbers';
@@ -209,16 +214,20 @@ export class SupplyRequestsService {
       entityId: id,
     });
 
-    await this.notifications.notifyRole('WAREHOUSE_MANAGER', {
-      type: 'PENDING_SUPPLY_REQUEST',
-      title: 'Supply request awaiting review',
-      message: `${existing.requestNumber} is awaiting warehouse review`,
-      entityType: 'SupplyRequest',
-      entityId: id,
-      dedupeKey: `PENDING_SUPPLY_REQUEST:${id}`,
-      href: `/warehouse/supply-requests/${id}`,
-      warehouseId: existing.warehouseId,
-    });
+    await this.notifications.notifyRoles(
+      [RoleCode.WAREHOUSE_MANAGER, RoleCode.WAREHOUSE_STAFF],
+      {
+        type: NotificationType.PENDING_SUPPLY_REQUEST,
+        title: 'Supply request awaiting review',
+        message: `Supply request ${existing.requestNumber} is awaiting warehouse review.`,
+        entityType: 'SupplyRequest',
+        entityId: id,
+        severity: NotificationSeverity.WARNING,
+        dedupeKey: `PENDING_SUPPLY_REQUEST:${id}`,
+        href: `/warehouse/supply-requests/${id}`,
+        warehouseId: existing.warehouseId,
+      },
+    );
 
     return updated;
   }
@@ -274,6 +283,21 @@ export class SupplyRequestsService {
       entityId: id,
     });
 
+    await this.notifications.notifyRoles(
+      [RoleCode.PHARMACY_MANAGER, RoleCode.PHARMACY_STAFF],
+      {
+        type: NotificationType.SUPPLY_REQUEST_APPROVED,
+        title: 'Supply request approved',
+        message: `Supply request ${existing.requestNumber} was approved.`,
+        entityType: 'SupplyRequest',
+        entityId: id,
+        severity: NotificationSeverity.INFO,
+        href: `/pharmacy/supply-requests/${id}`,
+        pharmacyId: existing.pharmacyId,
+      },
+    );
+    await this.notifications.resolveByDedupeKey(`PENDING_SUPPLY_REQUEST:${id}`);
+
     return this.prisma.supplyRequest.findUnique({ where: { id }, include: this.detailInclude() });
   }
 
@@ -310,6 +334,21 @@ export class SupplyRequestsService {
       entityId: id,
       newValues: { rejectionReason: payload.rejectionReason },
     });
+
+    await this.notifications.notifyRoles(
+      [RoleCode.PHARMACY_MANAGER, RoleCode.PHARMACY_STAFF],
+      {
+        type: NotificationType.SUPPLY_REQUEST_REJECTED,
+        title: 'Supply request rejected',
+        message: `Supply request ${existing.requestNumber} was rejected: ${payload.rejectionReason.trim()}`,
+        entityType: 'SupplyRequest',
+        entityId: id,
+        severity: NotificationSeverity.WARNING,
+        href: `/pharmacy/supply-requests/${id}`,
+        pharmacyId: existing.pharmacyId,
+      },
+    );
+    await this.notifications.resolveByDedupeKey(`PENDING_SUPPLY_REQUEST:${id}`);
 
     return updated;
   }

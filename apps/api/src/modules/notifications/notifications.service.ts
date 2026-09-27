@@ -149,6 +149,8 @@ export class NotificationsService {
   /**
    * Upsert an active alert for one user.
    * Unique partial index on (userId, dedupeKey) WHERE resolvedAt IS NULL.
+   * New conditions create UNREAD; existing active alerts keep their read status
+   * unless we are recreating after resolve.
    */
   async upsertActiveAlert(input: UpsertAlertInput): Promise<{ created: boolean }> {
     const existing = await this.prisma.notification.findFirst({
@@ -218,6 +220,18 @@ export class NotificationsService {
     }
   }
 
+  async resolveByDedupeKey(dedupeKey: string) {
+    const result = await this.prisma.notification.updateMany({
+      where: { dedupeKey, resolvedAt: null },
+      data: {
+        resolvedAt: new Date(),
+        status: NotificationStatus.READ,
+        readAt: new Date(),
+      },
+    });
+    return result.count;
+  }
+
   async resolveStaleAlerts(type: NotificationType, activeDedupeKeys: string[]) {
     const result = await this.prisma.notification.updateMany({
       where: {
@@ -256,18 +270,63 @@ export class NotificationsService {
       pharmacyId?: string | null;
     },
   ) {
+    return this.notifyRoles([roleCode], input);
+  }
+
+  /**
+   * Notify users holding any of the given roles.
+   * SUPER_ADMIN always receives operational alerts.
+   * When warehouseId/pharmacyId is set, location-scoped users outside that location are skipped
+   * (SUPER_ADMIN and unscoped users still receive).
+   */
+  async notifyRoles(
+    roleCodes: string[],
+    input: {
+      type: keyof typeof NotificationType | NotificationType;
+      title: string;
+      message: string;
+      entityType?: string;
+      entityId?: string;
+      severity?: NotificationSeverity;
+      dedupeKey?: string;
+      href?: string;
+      warehouseId?: string | null;
+      pharmacyId?: string | null;
+    },
+  ) {
+    const codes = [...new Set([...roleCodes, 'SUPER_ADMIN'])];
     const users = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
-        userRoles: { some: { role: { code: roleCode } } },
+        userRoles: { some: { role: { code: { in: codes } } } },
       },
-      select: { id: true },
+      select: {
+        id: true,
+        warehouseId: true,
+        pharmacyId: true,
+        userRoles: { select: { role: { select: { code: true } } } },
+        notificationPreference: { select: { inAppEnabled: true } },
+      },
     });
-    if (users.length === 0) return;
+    if (users.length === 0) return { notified: 0 };
 
+    const recipients = users.filter((user) => {
+      if (user.notificationPreference?.inAppEnabled === false) return false;
+      const isSuperAdmin = user.userRoles.some((r) => r.role.code === 'SUPER_ADMIN');
+      if (isSuperAdmin) return true;
+      if (input.warehouseId && user.warehouseId && user.warehouseId !== input.warehouseId) {
+        return false;
+      }
+      if (input.pharmacyId && user.pharmacyId && user.pharmacyId !== input.pharmacyId) {
+        return false;
+      }
+      return true;
+    });
+
+    let notified = 0;
     if (input.dedupeKey) {
-      for (const user of users) {
-        await this.upsertActiveAlert({
+      for (const user of recipients) {
+        const result = await this.upsertActiveAlert({
           userId: user.id,
           dedupeKey: input.dedupeKey,
           type: input.type as NotificationType,
@@ -280,12 +339,15 @@ export class NotificationsService {
           warehouseId: input.warehouseId,
           pharmacyId: input.pharmacyId,
         });
+        if (result.created) notified += 1;
+        else notified += 1; // existing active alert still counts as delivered
       }
-      return;
+      return { notified };
     }
 
+    if (recipients.length === 0) return { notified: 0 };
     await this.prisma.notification.createMany({
-      data: users.map((user) => ({
+      data: recipients.map((user) => ({
         userId: user.id,
         type: input.type as NotificationType,
         title: input.title,
@@ -298,6 +360,7 @@ export class NotificationsService {
         pharmacyId: input.pharmacyId,
       })),
     });
+    return { notified: recipients.length };
   }
 
   notifyUser(

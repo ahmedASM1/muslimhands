@@ -62,7 +62,8 @@ export class NotificationsController {
   @Get('unread-count')
   @ApiOperation({ summary: 'Unread active notification count' })
   @RequirePermissions(PERMISSIONS.NOTIFICATION_VIEW)
-  unreadCount(@CurrentUser() user: RequestUser) {
+  async unreadCount(@CurrentUser() user: RequestUser) {
+    await this.alerts.evaluateAllDebounced().catch(() => undefined);
     return this.service.unreadCount(user.id);
   }
 

@@ -6,7 +6,13 @@
   NotFoundException,
 } from '@nestjs/common';
 import { AuditAction, RoleCode, type AuthenticatedUser } from '@mh/shared';
-import { Prisma, SupplyRequestStatus, TransferStatus } from '@prisma/client';
+import {
+  NotificationSeverity,
+  NotificationType,
+  Prisma,
+  SupplyRequestStatus,
+  TransferStatus,
+} from '@prisma/client';
 import { IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { requirePharmacyId, resolvePharmacyId } from '../../common/access/access';
 import { nextDocumentNumber } from '../../common/inventory/document-numbers';
@@ -14,6 +20,7 @@ import { InventoryTransactionService } from '../../common/inventory/inventory-tr
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export class TransferQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -47,6 +54,7 @@ export class TransfersService {
     private readonly prisma: PrismaService,
     private readonly inventoryTx: InventoryTransactionService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(user: AuthenticatedUser, query: TransferQueryDto) {
@@ -295,6 +303,22 @@ export class TransfersService {
       entityId: id,
     });
 
+    await this.notifications.notifyRoles(
+      [RoleCode.PHARMACY_MANAGER, RoleCode.PHARMACY_STAFF],
+      {
+        type: NotificationType.TRANSFER_AWAITING_RECEIPT,
+        title: 'Transfer awaiting receipt',
+        message: `Transfer ${shipped.transferNumber} is awaiting receipt at the pharmacy.`,
+        entityType: 'StockTransfer',
+        entityId: id,
+        severity: NotificationSeverity.WARNING,
+        dedupeKey: `TRANSFER_AWAITING_RECEIPT:${id}`,
+        href: '/pharmacy/transfers',
+        pharmacyId: shipped.pharmacyId,
+        warehouseId: shipped.warehouseId,
+      },
+    );
+
     return shipped;
   }
 
@@ -351,6 +375,8 @@ export class TransfersService {
       entityType: 'StockTransfer',
       entityId: id,
     });
+
+    await this.notifications.resolveByDedupeKey(`TRANSFER_AWAITING_RECEIPT:${id}`);
 
     return received;
   }
