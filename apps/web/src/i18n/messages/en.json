@@ -1038,6 +1038,37 @@
     }
   },
   "inventory": {
+    "import": {
+      "stepUpload": "Upload",
+      "stepPreview": "Preview",
+      "stepConfirm": "Done",
+      "stepUploadTitle": "Import catalog — upload file",
+      "stepPreviewTitle": "Import catalog — review before merge",
+      "stepDoneTitle": "Import complete",
+      "uploadHint": "Upload a CSV/Excel catalog or stock-movement workbook. We will analyze sheets, map Item Description and Unit, and show what will be created or updated before anything is saved.",
+      "selectedFile": "Selected: {{name}}",
+      "analyzePreview": "Analyze & preview",
+      "analyzing": "Analyzing…",
+      "confirmMerge": "Confirm merge",
+      "committing": "Merging…",
+      "willCreate": "Will create",
+      "willUpdate": "Will update",
+      "willSkip": "Will skip",
+      "created": "Created",
+      "updated": "Updated",
+      "skipped": "Skipped",
+      "newColumns": "New columns",
+      "newColumnsHint": "These extra columns will be stored with each item and shown in the table/export:",
+      "categoriesToCreate": "Categories to create",
+      "unitsToCreate": "Units to create",
+      "colRow": "Row",
+      "colAction": "Action",
+      "doneMessage": "Merge finished. New columns from the file were saved with the matching catalog items."
+    },
+    "export": {
+      "success": "Export downloaded",
+      "failed": "Export failed"
+    },
     "medicines": {
       "title": "Medicines",
       "subtitle": "Catalog definitions only. Stock quantities are managed later by warehouse and pharmacy inventory.",

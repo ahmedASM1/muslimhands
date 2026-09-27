@@ -296,3 +296,51 @@ export function resolveRowItemType(
   if (row._item_type_hint) return normalizeCatalogItemType(row._item_type_hint);
   return normalizeCatalogItemType(defaultItemType || CATALOG_ITEM_TYPE.MEDICINE);
 }
+
+const INTERNAL_ROW_KEYS = new Set(['_sheet', '_item_type_hint', '_source_row']);
+
+const KNOWN_IMPORT_KEYS = new Set(
+  [
+    ...Object.keys(HEADER_ALIASES),
+    ...Object.values(HEADER_ALIASES).flat().map((alias) => normalizeHeader(alias)),
+    'item_description',
+    'remaining_qty',
+    'remaining',
+    'previous_stock_movement',
+    'previous_stock',
+    'supplied_qty',
+    'supplied',
+    'total_amount_dispensed',
+    'dispensed_qty',
+    '#',
+    'no',
+    'number',
+    'sn',
+    's_n',
+  ].map((key) => normalizeHeader(key)),
+);
+
+/** Columns from a parsed row that are not mapped to core catalog fields. */
+export function extractUnknownColumns(row: Record<string, string>): Record<string, string> {
+  const extras: Record<string, string> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (!value?.trim()) continue;
+    const normalized = normalizeHeader(key);
+    if (!normalized || INTERNAL_ROW_KEYS.has(key) || INTERNAL_ROW_KEYS.has(normalized)) continue;
+    if (KNOWN_IMPORT_KEYS.has(normalized)) continue;
+    // Skip pure dispensed-date columns like dispensed_qty_01_04
+    if (normalized.startsWith('dispensed')) continue;
+    extras[key] = value.trim();
+  }
+  return extras;
+}
+
+export function collectUnknownColumnNames(rows: Record<string, string>[]): string[] {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(extractUnknownColumns(row))) {
+      keys.add(key);
+    }
+  }
+  return [...keys].sort((a, b) => a.localeCompare(b));
+}

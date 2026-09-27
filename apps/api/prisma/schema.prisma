@@ -434,6 +434,8 @@ model Medicine {
   reorderQuantity Int        @default(0) @map("reorder_quantity")
   referenceValue  Decimal?   @map("reference_value") @db.Decimal(12, 4)
   description     String?
+  /// Extra columns captured from spreadsheet imports (stock movement sheets, custom fields)
+  importMetadata  Json?      @map("import_metadata")
   isActive        Boolean    @default(true) @map("is_active")
   createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)

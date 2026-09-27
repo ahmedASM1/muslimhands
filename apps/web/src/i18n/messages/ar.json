@@ -1038,6 +1038,37 @@
     }
   },
   "inventory": {
+    "import": {
+      "stepUpload": "رفع",
+      "stepPreview": "معاينة",
+      "stepConfirm": "تم",
+      "stepUploadTitle": "استيراد الفهرس — رفع الملف",
+      "stepPreviewTitle": "استيراد الفهرس — مراجعة قبل الدمج",
+      "stepDoneTitle": "اكتمل الاستيراد",
+      "uploadHint": "ارفع ملف CSV/Excel للفهرس أو لحركة المخزون. سنحلل الأوراق ونربط الوصف والوحدة ونعرض ما سيُنشأ أو يُحدَّث قبل أي حفظ.",
+      "selectedFile": "المحدد: {{name}}",
+      "analyzePreview": "تحليل ومعاينة",
+      "analyzing": "جارٍ التحليل…",
+      "confirmMerge": "تأكيد الدمج",
+      "committing": "جارٍ الدمج…",
+      "willCreate": "سيُنشأ",
+      "willUpdate": "سيُحدَّث",
+      "willSkip": "سيُتخطى",
+      "created": "أُنشئ",
+      "updated": "حُدّث",
+      "skipped": "تُخطّي",
+      "newColumns": "أعمدة جديدة",
+      "newColumnsHint": "هذه الأعمدة الإضافية ستُحفظ مع كل بند وتظهر في الجدول والتصدير:",
+      "categoriesToCreate": "تصنيفات ستُنشأ",
+      "unitsToCreate": "وحدات ستُنشأ",
+      "colRow": "الصف",
+      "colAction": "الإجراء",
+      "doneMessage": "اكتمل الدمج. حُفظت الأعمدة الجديدة من الملف مع البنود المطابقة."
+    },
+    "export": {
+      "success": "تم تنزيل التصدير",
+      "failed": "فشل التصدير"
+    },
     "medicines": {
       "title": "الأدوية",
       "subtitle": "تعريفات الفهرس فقط. تُدار كميات المخزون لاحقاً عبر مخزون المستودع والصيدلية.",

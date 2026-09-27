@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useI18n } from '@/i18n';
 import { useForm, useWatch } from 'react-hook-form';
@@ -13,12 +13,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiList, apiRequest, apiUpload } from '@/lib/api';
+import { apiList, apiRequest, apiDownload } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { DOSAGE_FORMS, dosageFormLabel } from '@/lib/catalog';
 import { hasPermission } from '@/lib/permissions';
 import { useToast } from '@/lib/toast';
 import { CATALOG_ITEM_TYPE } from '@mh/shared';
+import { CatalogImportModal } from '@/components/catalog-import-modal';
 
 type CatalogMode = typeof CATALOG_ITEM_TYPE.MEDICINE | typeof CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
 
@@ -49,6 +50,7 @@ interface MedicineRow {
   reorderQuantity: number;
   referenceValue?: string | number | null;
   description?: string | null;
+  importMetadata?: Record<string, string> | null;
   status: string;
   isActive: boolean;
   category?: NamedRef;
@@ -82,9 +84,10 @@ export default function MedicinesPage() {
   const client = useQueryClient();
   const { user } = useAuth();
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState<string | null>(null);
 
   const catalogMode: CatalogMode = useMemo(() => {
     const fromQuery = searchParams.get('type')?.toUpperCase();
@@ -263,42 +266,44 @@ export default function MedicinesPage() {
     onError: (error) => toast.push((error as Error).message, 'error'),
   });
 
-  const importFile = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('defaultItemType', catalogMode);
-      return apiUpload<{
-        created: number;
-        updated: number;
-        skipped: number;
-        createdMedicines?: number;
-        createdSupplies?: number;
-        updatedMedicines?: number;
-        updatedSupplies?: number;
-      }>('/medicines/import', formData);
-    },
-    onSuccess: (result) => {
-      toast.push(
-        t('inventory.medicines.importResultTyped', {
-          created: result.created,
-          updated: result.updated,
-          skipped: result.skipped,
-          medicines: (result.createdMedicines ?? 0) + (result.updatedMedicines ?? 0),
-          supplies: (result.createdSupplies ?? 0) + (result.updatedSupplies ?? 0),
-        }),
-      );
-      client.invalidateQueries({ queryKey: ['medicines'] });
-      client.invalidateQueries({ queryKey: ['categories'] });
-      client.invalidateQueries({ queryKey: ['categories-active'] });
-      client.invalidateQueries({ queryKey: ['units-active'] });
-    },
-    onError: (error) => toast.push((error as Error).message, 'error'),
-  });
-
   const rows = medicines.data?.items ?? [];
   const meta = medicines.data?.meta;
   const emDash = t('common.emDash');
+
+  const extraColumnKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const row of rows) {
+      const metadata = row.importMetadata;
+      if (metadata && typeof metadata === 'object') {
+        for (const key of Object.keys(metadata)) keys.add(key);
+      }
+    }
+    return [...keys].sort().slice(0, 6);
+  }, [rows]);
+
+  async function doExport(format: 'csv' | 'xlsx' | 'pdf') {
+    setExporting(format);
+    try {
+      const params = new URLSearchParams({
+        format,
+        limit: '5000',
+        itemType: catalogMode,
+        sortBy: 'name',
+      });
+      if (search) params.set('search', search);
+      if (categoryId) params.set('categoryId', categoryId);
+      if (status) params.set('isActive', status === 'ACTIVE' ? 'true' : 'false');
+      if (dosageForm) params.set('dosageForm', dosageForm);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const base = isSupplies ? 'medical-supplies' : 'medicines';
+      await apiDownload(`/medicines/export?${params.toString()}`, `${base}-${stamp}.${format === 'xlsx' ? 'xlsx' : format}`);
+      toast.push(t('inventory.export.success'), 'success');
+    } catch (error) {
+      toast.push((error as Error).message || t('inventory.export.failed'), 'error');
+    } finally {
+      setExporting(null);
+    }
+  }
 
   const tableHeaders = useMemo(
     () =>
@@ -311,6 +316,7 @@ export default function MedicinesPage() {
             t('table.barcode'),
             t('table.minimumStock'),
             t('table.reorderQuantity'),
+            ...extraColumnKeys,
             t('table.status'),
             t('table.actions'),
           ]
@@ -325,10 +331,11 @@ export default function MedicinesPage() {
             t('table.barcode'),
             t('table.minimumStock'),
             t('table.reorderQuantity'),
+            ...extraColumnKeys,
             t('table.status'),
             t('table.actions'),
           ],
-    [t, isSupplies],
+    [t, isSupplies, extraColumnKeys],
   );
 
   function startCreate() {
@@ -382,25 +389,47 @@ export default function MedicinesPage() {
             {t(isSupplies ? 'inventory.supplies.subtitle' : 'inventory.medicines.subtitle')}
           </p>
         </div>
-        {canCreate ? (
+        {canCreate || canUpdate ? (
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={importFile.isPending}>
-              {importFile.isPending ? t('common.saving') : t('actions.import')}
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) importFile.mutate(file);
-                event.target.value = '';
-              }}
-            />
-            <Button type="button" onClick={startCreate}>
-              {t(isSupplies ? 'actions.addSupply' : 'actions.addMedicine')}
-            </Button>
+            <div className="flex overflow-hidden rounded-md border">
+              <Button
+                type="button"
+                variant="ghost"
+                className="rounded-none border-e"
+                disabled={!!exporting}
+                onClick={() => doExport('csv')}
+              >
+                {exporting === 'csv' ? t('reports.exporting') : t('reports.exportCsv')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="rounded-none border-e"
+                disabled={!!exporting}
+                onClick={() => doExport('xlsx')}
+              >
+                {exporting === 'xlsx' ? t('reports.exporting') : t('reports.exportExcel')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="rounded-none"
+                disabled={!!exporting}
+                onClick={() => doExport('pdf')}
+              >
+                {exporting === 'pdf' ? t('reports.exporting') : t('reports.exportPdf')}
+              </Button>
+            </div>
+            {canCreate ? (
+              <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
+                {t('actions.import')}
+              </Button>
+            ) : null}
+            {canCreate ? (
+              <Button type="button" onClick={startCreate}>
+                {t(isSupplies ? 'actions.addSupply' : 'actions.addMedicine')}
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -513,6 +542,11 @@ export default function MedicinesPage() {
                   <td className="px-3 py-2">{row.barcode || emDash}</td>
                   <td className="px-3 py-2">{row.minimumStock}</td>
                   <td className="px-3 py-2">{row.reorderQuantity}</td>
+                  {extraColumnKeys.map((key) => (
+                    <td key={key} className="px-3 py-2">
+                      {row.importMetadata?.[key] || emDash}
+                    </td>
+                  ))}
                   <td className="px-3 py-2"><Badge>{row.status}</Badge></td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
@@ -755,6 +789,27 @@ export default function MedicinesPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <CatalogImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        defaultItemType={catalogMode}
+        onCommitted={(result) => {
+          toast.push(
+            t('inventory.medicines.importResultTyped', {
+              created: result.created,
+              updated: result.updated,
+              skipped: result.skipped,
+              medicines: (result.createdMedicines ?? 0) + (result.updatedMedicines ?? 0),
+              supplies: (result.createdSupplies ?? 0) + (result.updatedSupplies ?? 0),
+            }),
+          );
+          client.invalidateQueries({ queryKey: ['medicines'] });
+          client.invalidateQueries({ queryKey: ['categories'] });
+          client.invalidateQueries({ queryKey: ['categories-active'] });
+          client.invalidateQueries({ queryKey: ['units-active'] });
+        }}
+      />
     </div>
   );
 }

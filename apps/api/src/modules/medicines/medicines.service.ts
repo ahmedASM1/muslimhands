@@ -19,8 +19,10 @@ import {
   unitCodeFromName,
   validateMedicineNumbers,
 } from '../catalog/catalog-rules';
-import { parseSpreadsheetRows, pickField, resolveRowItemType } from '../catalog/spreadsheet-import';
+import { parseSpreadsheetRows, pickField, resolveRowItemType, extractUnknownColumns, collectUnknownColumnNames } from '../catalog/spreadsheet-import';
 import { dosageFormFromUnitLabel, parseItemDescription } from '../catalog/catalog-item-parse';
+import { renderExport } from '../reports/exporters';
+import type { ExportFormat, ReportExportPayload } from '../reports/types/report.types';
 
 export class MedicineQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -130,6 +132,7 @@ export class MedicinesService {
       reorderQuantity: number;
       referenceValue?: number;
       description?: string;
+      importMetadata?: Record<string, string> | null;
     },
     userId: string,
   ) {
@@ -157,6 +160,7 @@ export class MedicinesService {
         reorderQuantity: data.reorderQuantity,
         referenceValue: data.referenceValue ?? null,
         description: data.description?.trim() || null,
+        importMetadata: data.importMetadata ?? undefined,
       },
       include: { category: true, unit: true },
     });
@@ -187,6 +191,7 @@ export class MedicinesService {
       referenceValue?: number | null;
       description?: string;
       isActive?: boolean;
+      importMetadata?: Record<string, string> | null;
     },
     userId: string,
   ) {
@@ -212,6 +217,14 @@ export class MedicinesService {
       await this.assertUniqueBarcode(barcode);
     }
 
+    const mergedMetadata =
+      data.importMetadata === undefined
+        ? undefined
+        : {
+            ...((existing.importMetadata as Record<string, string> | null) ?? {}),
+            ...(data.importMetadata ?? {}),
+          };
+
     const updated = await this.prisma.medicine.update({
       where: { id },
       data: {
@@ -229,6 +242,7 @@ export class MedicinesService {
         referenceValue: data.referenceValue,
         description: data.description?.trim(),
         isActive: data.isActive,
+        importMetadata: mergedMetadata === undefined ? undefined : mergedMetadata,
       },
       include: { category: true, unit: true },
     });
@@ -250,7 +264,7 @@ export class MedicinesService {
   async importFromFile(
     file: { buffer: Buffer; originalname: string },
     userId: string,
-    options?: { defaultItemType?: string },
+    options?: { defaultItemType?: string; dryRun?: boolean },
   ) {
     if (!file?.buffer?.length) {
       throw new BadRequestException('Upload a CSV or Excel file');
@@ -267,9 +281,11 @@ export class MedicinesService {
       throw new BadRequestException('No data rows found in the file');
     }
 
+    const dryRun = Boolean(options?.dryRun);
     const defaultItemType = normalizeCatalogItemType(
       options?.defaultItemType || CATALOG_ITEM_TYPE.MEDICINE,
     );
+    const unknownColumns = collectUnknownColumnNames(rows);
 
     const categories = await this.prisma.medicineCategory.findMany({ where: { deletedAt: null } });
     const units = await this.prisma.unit.findMany();
@@ -284,6 +300,19 @@ export class MedicinesService {
     const created: string[] = [];
     const updated: string[] = [];
     const skipped: { row: number; reason: string }[] = [];
+    const previewRows: Array<{
+      row: number;
+      action: 'create' | 'update' | 'skip';
+      name: string;
+      itemType: string;
+      category: string;
+      unit: string;
+      sheet?: string;
+      reason?: string;
+      extraColumns?: Record<string, string>;
+    }> = [];
+    const categoriesToCreate = new Set<string>();
+    const unitsToCreate = new Set<string>();
     let createdMedicines = 0;
     let createdSupplies = 0;
     let updatedMedicines = 0;
@@ -313,6 +342,16 @@ export class MedicinesService {
       );
       if (!rawName || rawName.length < 2) {
         skipped.push({ row: sourceRow, reason: 'Missing or short name / item description' });
+        previewRows.push({
+          row: sourceRow,
+          action: 'skip',
+          name: rawName || '—',
+          itemType: defaultItemType,
+          category: '—',
+          unit: '—',
+          sheet: row._sheet,
+          reason: 'Missing or short name / item description',
+        });
         continue;
       }
 
@@ -333,24 +372,44 @@ export class MedicinesService {
         })();
 
       if (!category) {
+        categoriesToCreate.add(`${categoryName} (${itemType})`);
         const sameName = categoryByName.get(categoryName.toLowerCase());
         if (sameName && sameName.itemType !== itemType) {
           const medicineCount = await this.prisma.medicine.count({
             where: { categoryId: sameName.id, deletedAt: null },
           });
           if (medicineCount === 0) {
-            category = await this.prisma.medicineCategory.update({
-              where: { id: sameName.id },
-              data: { itemType, isActive: true, deletedAt: null },
-            });
+            if (dryRun) {
+              category = { ...sameName, itemType };
+            } else {
+              category = await this.prisma.medicineCategory.update({
+                where: { id: sameName.id },
+                data: { itemType, isActive: true, deletedAt: null },
+              });
+            }
           } else {
             const typedName = `${categoryName} · ${catalogItemTypeLabel(itemType, 'en')}`;
-            category =
-              categoryByName.get(typedName.toLowerCase()) ??
-              (await this.prisma.medicineCategory.create({
+            const existingTyped = categoryByName.get(typedName.toLowerCase());
+            if (existingTyped) {
+              category = existingTyped;
+            } else if (dryRun) {
+              category = {
+                id: `preview-cat-${typedName}`,
+                name: typedName,
+                itemType,
+              } as (typeof categories)[number];
+            } else {
+              category = await this.prisma.medicineCategory.create({
                 data: { name: typedName, itemType },
-              }));
+              });
+            }
           }
+        } else if (dryRun) {
+          category = {
+            id: `preview-cat-${categoryName}`,
+            name: categoryName,
+            itemType,
+          } as (typeof categories)[number];
         } else {
           category = await this.prisma.medicineCategory.create({
             data: { name: categoryName, itemType },
@@ -369,18 +428,29 @@ export class MedicinesService {
         (unitRaw ? unitByName.get(unitRaw.toLowerCase()) : undefined);
 
       if (!unit && unitRaw) {
-        let code = unitCodeFromName(unitRaw);
-        let attempt = 1;
-        while (unitByCode.has(code.toLowerCase()) || units.some((u) => u.code === code)) {
-          attempt += 1;
-          code = `${unitCodeFromName(unitRaw).slice(0, 20)}_${attempt}`.slice(0, 24);
+        unitsToCreate.add(unitRaw);
+        if (dryRun) {
+          unit = {
+            id: `preview-unit-${unitRaw}`,
+            code: unitCodeFromName(unitRaw),
+            name: unitRaw,
+          } as (typeof units)[number];
+          unitByCode.set(unit.code.toLowerCase(), unit);
+          unitByName.set(unit.name.toLowerCase(), unit);
+        } else {
+          let code = unitCodeFromName(unitRaw);
+          let attempt = 1;
+          while (unitByCode.has(code.toLowerCase()) || units.some((u) => u.code === code)) {
+            attempt += 1;
+            code = `${unitCodeFromName(unitRaw).slice(0, 20)}_${attempt}`.slice(0, 24);
+          }
+          unit = await this.prisma.unit.create({
+            data: { code, name: unitRaw, isActive: true },
+          });
+          units.push(unit);
+          unitByCode.set(unit.code.toLowerCase(), unit);
+          unitByName.set(unit.name.toLowerCase(), unit);
         }
-        unit = await this.prisma.unit.create({
-          data: { code, name: unitRaw, isActive: true },
-        });
-        units.push(unit);
-        unitByCode.set(unit.code.toLowerCase(), unit);
-        unitByName.set(unit.name.toLowerCase(), unit);
       }
 
       if (!unit) {
@@ -390,10 +460,15 @@ export class MedicinesService {
           units[0];
       }
       if (!unit) {
-        unit = await this.prisma.unit.create({
-          data: { code: 'UNIT', name: 'Unit', isActive: true },
-        });
-        units.push(unit);
+        unitsToCreate.add('Unit');
+        if (dryRun) {
+          unit = { id: 'preview-unit-UNIT', code: 'UNIT', name: 'Unit' } as (typeof units)[number];
+        } else {
+          unit = await this.prisma.unit.create({
+            data: { code: 'UNIT', name: 'Unit', isActive: true },
+          });
+          units.push(unit);
+        }
         unitByCode.set('unit', unit);
         unitByName.set('unit', unit);
       }
@@ -414,7 +489,7 @@ export class MedicinesService {
         ? DosageForm.OTHER
         : (normalizeDosageForm(dosageFromFile, dosageFallback) as DosageForm);
 
-      let strength = isSupply
+      const strength = isSupply
         ? undefined
         : pickField(row, 'strength', 'concentration', 'التركيز') || parsed.strength || undefined;
 
@@ -439,10 +514,22 @@ export class MedicinesService {
         parsed.description ||
         (rawName !== name ? rawName : undefined);
       const minimumStock =
-        Number(pickField(row, 'minimum_stock', 'min_stock', 'الحد_الأدنى', 'remaining_qty', 'remaining') || '0') ||
-        0;
+        Number(pickField(row, 'minimum_stock', 'min_stock', 'الحد_الأدنى') || '0') || 0;
       const reorderQuantity =
         Number(pickField(row, 'reorder_quantity', 'reorder', 'كمية_إعادة_الطلب') || '0') || 0;
+
+      const importMetadata: Record<string, string> = {
+        ...extractUnknownColumns(row),
+      };
+      const previousStock = pickField(row, 'previous_stock_movement', 'previous_stock');
+      const suppliedQty = pickField(row, 'supplied_qty', 'supplied');
+      const remainingQty = pickField(row, 'remaining_qty', 'remaining');
+      const totalDispensed = pickField(row, 'total_amount_dispensed');
+      if (previousStock) importMetadata.previous_stock = previousStock;
+      if (suppliedQty) importMetadata.supplied_qty = suppliedQty;
+      if (remainingQty) importMetadata.remaining_qty = remainingQty;
+      if (totalDispensed) importMetadata.total_dispensed = totalDispensed;
+      if (row._sheet) importMetadata.source_sheet = row._sheet;
 
       try {
         const existing = sku
@@ -455,6 +542,31 @@ export class MedicinesService {
           : await this.prisma.medicine.findFirst({
               where: { name: { equals: name, mode: 'insensitive' }, deletedAt: null },
             });
+
+        const action = existing ? 'update' : 'create';
+        previewRows.push({
+          row: sourceRow,
+          action,
+          name,
+          itemType,
+          category: category.name,
+          unit: unit.name,
+          sheet: row._sheet,
+          extraColumns: Object.keys(importMetadata).length ? importMetadata : undefined,
+        });
+
+        if (dryRun) {
+          if (existing) {
+            updated.push(name);
+            if (isSupply) updatedSupplies += 1;
+            else updatedMedicines += 1;
+          } else {
+            created.push(name);
+            if (isSupply) createdSupplies += 1;
+            else createdMedicines += 1;
+          }
+          continue;
+        }
 
         if (existing) {
           await this.update(
@@ -473,6 +585,7 @@ export class MedicinesService {
               reorderQuantity,
               description,
               isActive: true,
+              importMetadata,
             },
             userId,
           );
@@ -494,6 +607,7 @@ export class MedicinesService {
               minimumStock,
               reorderQuantity,
               description,
+              importMetadata,
             },
             userId,
           );
@@ -502,32 +616,44 @@ export class MedicinesService {
           else createdMedicines += 1;
         }
       } catch (error) {
-        skipped.push({
+        const reason = error instanceof Error ? error.message : 'Failed to save row';
+        skipped.push({ row: sourceRow, reason });
+        previewRows.push({
           row: sourceRow,
-          reason: error instanceof Error ? error.message : 'Failed to save row',
+          action: 'skip',
+          name,
+          itemType,
+          category: category.name,
+          unit: unit.name,
+          sheet: row._sheet,
+          reason,
         });
       }
     }
 
-    await this.audit.record({
-      userId,
-      action: AuditAction.IMPORT_MEDICINES,
-      entityType: 'Medicine',
-      entityId: userId,
-      newValues: {
-        created: created.length,
-        updated: updated.length,
-        skipped: skipped.length,
-        createdMedicines,
-        createdSupplies,
-        updatedMedicines,
-        updatedSupplies,
-        filename: file.originalname,
-        defaultItemType,
-      },
-    });
+    if (!dryRun) {
+      await this.audit.record({
+        userId,
+        action: AuditAction.IMPORT_MEDICINES,
+        entityType: 'Medicine',
+        entityId: userId,
+        newValues: {
+          created: created.length,
+          updated: updated.length,
+          skipped: skipped.length,
+          createdMedicines,
+          createdSupplies,
+          updatedMedicines,
+          updatedSupplies,
+          unknownColumns,
+          filename: file.originalname,
+          defaultItemType,
+        },
+      });
+    }
 
     return {
+      dryRun,
       created: created.length,
       updated: updated.length,
       skipped: skipped.length,
@@ -535,8 +661,130 @@ export class MedicinesService {
       createdSupplies,
       updatedMedicines,
       updatedSupplies,
+      unknownColumns,
+      categoriesToCreate: [...categoriesToCreate],
+      unitsToCreate: [...unitsToCreate],
+      previewRows: previewRows.slice(0, 200),
       details: { created, updated, skipped },
     };
+  }
+
+  async exportCatalog(
+    query: MedicineQueryDto & { format?: string },
+  ): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+    const format = ((query.format ?? 'xlsx') as string).toLowerCase() as ExportFormat;
+    if (!['csv', 'xlsx', 'pdf'].includes(format)) {
+      throw new BadRequestException('format must be csv, xlsx, or pdf');
+    }
+
+    const where: Prisma.MedicineWhereInput = {
+      deletedAt: null,
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.dosageForm ? { dosageForm: query.dosageForm } : {}),
+      ...(query.isActive !== undefined ? { isActive: query.isActive === 'true' } : {}),
+      ...(query.itemType
+        ? {
+            category: {
+              deletedAt: null,
+              itemType: normalizeCatalogItemType(query.itemType),
+            },
+          }
+        : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' } },
+              { genericName: { contains: query.search, mode: 'insensitive' } },
+              { brandName: { contains: query.search, mode: 'insensitive' } },
+              { sku: { contains: query.search, mode: 'insensitive' } },
+              { barcode: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const items = await this.prisma.medicine.findMany({
+      where,
+      take: Math.min(Number(query.limit) || 5000, 10000),
+      orderBy: { name: 'asc' },
+      include: { category: true, unit: true },
+    });
+
+    const metaKeys = new Set<string>();
+    for (const item of items) {
+      const meta = item.importMetadata as Record<string, unknown> | null;
+      if (meta && typeof meta === 'object') {
+        for (const key of Object.keys(meta)) metaKeys.add(key);
+      }
+    }
+    const extraColumns = [...metaKeys].sort().slice(0, 12);
+
+    const isSupply = query.itemType
+      ? normalizeCatalogItemType(query.itemType) === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
+      : false;
+    const title = isSupply
+      ? 'Muslim Hands — Medical Supplies Catalog'
+      : 'Muslim Hands — Medicines Catalog';
+
+    const columns = [
+      { key: 'name', header: 'Name' },
+      { key: 'genericName', header: 'Generic name' },
+      { key: 'brandName', header: 'Brand' },
+      { key: 'strength', header: 'Strength' },
+      { key: 'dosageForm', header: 'Dosage form' },
+      { key: 'category', header: 'Category' },
+      { key: 'itemType', header: 'Type' },
+      { key: 'unit', header: 'Unit' },
+      { key: 'sku', header: 'SKU' },
+      { key: 'barcode', header: 'Barcode' },
+      { key: 'minimumStock', header: 'Min stock' },
+      { key: 'reorderQuantity', header: 'Reorder qty' },
+      { key: 'status', header: 'Status' },
+      { key: 'description', header: 'Description' },
+      ...extraColumns.map((key) => ({ key: `extra_${key}`, header: key })),
+    ];
+
+    const rows = items.map((item) => {
+      const meta = (item.importMetadata as Record<string, unknown> | null) ?? {};
+      const base: Record<string, unknown> = {
+        name: item.name,
+        genericName: item.genericName ?? '',
+        brandName: item.brandName ?? '',
+        strength: item.strength ?? '',
+        dosageForm: item.dosageForm,
+        category: item.category?.name ?? '',
+        itemType: item.category?.itemType ?? '',
+        unit: item.unit?.name ?? '',
+        sku: item.sku,
+        barcode: item.barcode ?? '',
+        minimumStock: item.minimumStock,
+        reorderQuantity: item.reorderQuantity,
+        status: item.isActive ? 'ACTIVE' : 'INACTIVE',
+        description: item.description ?? '',
+      };
+      for (const key of extraColumns) {
+        base[`extra_${key}`] = meta[key] == null ? '' : String(meta[key]);
+      }
+      return base;
+    });
+
+    const filters: string[] = [];
+    if (query.itemType) filters.push(`type=${normalizeCatalogItemType(query.itemType)}`);
+    if (query.search) filters.push(`search=${query.search}`);
+    if (query.categoryId) filters.push(`category=${query.categoryId}`);
+    if (query.dosageForm) filters.push(`form=${query.dosageForm}`);
+    if (query.isActive !== undefined) filters.push(`active=${query.isActive}`);
+
+    const payload: ReportExportPayload = {
+      reportType: isSupply ? 'medical-supplies' : 'medicines',
+      title,
+      generatedAt: new Date(),
+      filterSummary: filters.join(' · ') || 'All catalog items',
+      columns,
+      rows,
+    };
+
+    return renderExport(format, payload);
   }
 
   private assertCreatePayload(

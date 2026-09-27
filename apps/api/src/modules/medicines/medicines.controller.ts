@@ -1,6 +1,7 @@
-﻿import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+﻿import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -165,6 +166,15 @@ export class MedicinesController {
     return this.service.list(query);
   }
 
+  @Get('export')
+  @RequirePermissions(PERMISSIONS.MEDICINES_READ)
+  async export(@Query() query: MedicineQueryDto & { format?: string }, @Res() res: Response) {
+    const result = await this.service.exportCatalog(query);
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+    res.send(result.buffer);
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.MEDICINES_READ)
   get(@Param('id') id: string) {
@@ -175,6 +185,25 @@ export class MedicinesController {
   @RequirePermissions(PERMISSIONS.MEDICINES_CREATE)
   create(@Body() dto: MedicineDto, @CurrentUser() user: RequestUser) {
     return this.service.create(dto, user.id);
+  }
+
+  @Post('import/preview')
+  @RequirePermissions(PERMISSIONS.MEDICINES_CREATE)
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  importPreview(
+    @UploadedFile() file: UploadedSpreadsheet | undefined,
+    @Body('defaultItemType') defaultItemType: string | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    if (!file) {
+      throw new BadRequestException('file is required');
+    }
+    return this.service.importFromFile(
+      { buffer: file.buffer, originalname: file.originalname },
+      user.id,
+      { defaultItemType, dryRun: true },
+    );
   }
 
   @Post('import')
@@ -201,7 +230,7 @@ export class MedicinesController {
     return this.service.importFromFile(
       { buffer: file.buffer, originalname: file.originalname },
       user.id,
-      { defaultItemType },
+      { defaultItemType, dryRun: false },
     );
   }
 
