@@ -41,6 +41,7 @@ interface StockRow {
 interface LineItem {
   medicineId: string;
   medicineName: string;
+  itemType: CatalogMode;
   quantity: number;
   available: number;
   estimatedUnitValue: number | null;
@@ -77,10 +78,9 @@ export default function DispensingPage() {
   const [result, setResult] = useState<DispenseResult | null>(null);
 
   useEffect(() => {
+    // Switching type only changes the picker catalog — keep cart lines for mixed dispense.
     setMedicineId('');
     setMedicineSearch('');
-    setLines([]);
-    setConfirmOpen(false);
   }, [catalogType]);
 
   const beneficiaries = useQuery({
@@ -218,6 +218,7 @@ export default function DispensingPage() {
         {
           medicineId: selectedMedicine.id,
           medicineName: selectedMedicine.name,
+          itemType: catalogType as CatalogMode,
           quantity: qty,
           available: liveAvail,
           estimatedUnitValue: Number.isFinite(unit as number) ? unit : null,
@@ -280,6 +281,11 @@ export default function DispensingPage() {
             <div className="mt-1 text-xs text-muted-foreground">{t('dispensing.typeSupplyHint')}</div>
           </button>
         </div>
+        {lines.length > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {t('dispensing.mixedCartHint', { count: lines.length })}
+          </p>
+        ) : null}
       </section>
 
       <section className="space-y-3 rounded-lg border p-4">
@@ -328,7 +334,9 @@ export default function DispensingPage() {
 
       <section className="space-y-3 rounded-lg border p-4">
         <h2 className="font-medium">
-          {t(isSupplies ? 'dispensing.supplies' : 'dispensing.medicines')}
+          {catalogType
+            ? t(isSupplies ? 'dispensing.addSupplies' : 'dispensing.addMedicines')
+            : t('dispensing.items')}
         </h2>
         {!catalogType ? (
           <p className="text-sm text-muted-foreground">{t('dispensing.selectTypeFirst')}</p>
@@ -393,22 +401,28 @@ export default function DispensingPage() {
             {linesWithLiveAvailability.length > 0 ? (
               <div className="overflow-x-auto rounded-md border">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted/40 text-left">
+                  <thead className="bg-muted/40">
                     <tr>
-                      <th className="px-3 py-2">
-                        {t(isSupplies ? 'table.supply' : 'table.medicine')}
-                      </th>
-                      <th className="px-3 py-2">{t('dispensing.requested')}</th>
-                      <th className="px-3 py-2">{t('dispensing.available')}</th>
-                      <th className="px-3 py-2">{t('dispensing.estUnitValue')}</th>
-                      <th className="px-3 py-2">{t('dispensing.estTotalValue')}</th>
-                      <th className="px-3 py-2" />
+                      <th className="px-3 py-2 text-start">{t('table.type')}</th>
+                      <th className="px-3 py-2 text-start">{t('dispensing.item')}</th>
+                      <th className="px-3 py-2 text-start">{t('dispensing.requested')}</th>
+                      <th className="px-3 py-2 text-start">{t('dispensing.available')}</th>
+                      <th className="px-3 py-2 text-start">{t('dispensing.estUnitValue')}</th>
+                      <th className="px-3 py-2 text-start">{t('dispensing.estTotalValue')}</th>
+                      <th className="px-3 py-2 text-start" />
                     </tr>
                   </thead>
                   <tbody>
                     {linesWithLiveAvailability.map((line) => (
                       <tr key={line.medicineId} className="border-t">
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 text-start text-xs text-muted-foreground">
+                          {t(
+                            line.itemType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
+                              ? 'catalogTypes.MEDICAL_SUPPLY'
+                              : 'catalogTypes.MEDICINE',
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-start">
                           <div>{line.medicineName}</div>
                           {line.insufficient ? (
                             <div className="mt-0.5 text-xs text-destructive">
@@ -416,19 +430,21 @@ export default function DispensingPage() {
                             </div>
                           ) : null}
                         </td>
-                        <td className="px-3 py-2">{line.quantity}</td>
-                        <td className={`px-3 py-2 ${line.insufficient ? 'text-destructive' : ''}`}>
+                        <td className="px-3 py-2 text-start">{line.quantity}</td>
+                        <td
+                          className={`px-3 py-2 text-start ${line.insufficient ? 'text-destructive' : ''}`}
+                        >
                           {line.available}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 text-start">
                           {line.estimatedUnitValue != null ? line.estimatedUnitValue : dash}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 text-start">
                           {line.estimatedUnitValue != null
                             ? (line.estimatedUnitValue * line.quantity).toFixed(2)
                             : dash}
                         </td>
-                        <td className="px-3 py-2 text-right">
+                        <td className="px-3 py-2 text-start">
                           <Button
                             type="button"
                             variant="ghost"
@@ -448,9 +464,7 @@ export default function DispensingPage() {
                 </table>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                {t(isSupplies ? 'dispensing.noSuppliesSelected' : 'dispensing.noMedicinesSelected')}
-              </p>
+              <p className="text-sm text-muted-foreground">{t('dispensing.noItemsSelected')}</p>
             )}
 
             {hasInsufficientStock ? (
@@ -501,20 +515,25 @@ export default function DispensingPage() {
         <section className="space-y-3 rounded-lg border border-primary/30 bg-muted/20 p-4">
           <h2 className="font-medium">{t('dispensing.confirmTitle')}</h2>
           <p className="text-sm">
-            {t('dispensing.confirmType')}:{' '}
-            <strong>
-              {t(isSupplies ? 'catalogTypes.MEDICAL_SUPPLY' : 'catalogTypes.MEDICINE')}
-            </strong>
-          </p>
-          <p className="text-sm">
             {t('dispensing.confirmBeneficiary')}{' '}
             <strong>{selectedBeneficiary?.fullName ?? selectedBeneficiary?.name}</strong> (
-            {selectedBeneficiary?.beneficiaryNumber})
+            <span dir="ltr" className="dir-ltr inline-block">
+              {selectedBeneficiary?.beneficiaryNumber}
+            </span>
+            )
           </p>
           <ul className="space-y-2 text-sm">
             {linesWithLiveAvailability.map((line) => (
               <li key={line.medicineId} className="flex flex-wrap items-baseline justify-between gap-2">
                 <span>
+                  <span className="text-xs text-muted-foreground">
+                    {t(
+                      line.itemType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
+                        ? 'catalogTypes.MEDICAL_SUPPLY'
+                        : 'catalogTypes.MEDICINE',
+                    )}
+                    {' · '}
+                  </span>
                   {line.medicineName}
                   <span className="text-muted-foreground">
                     {' '}
