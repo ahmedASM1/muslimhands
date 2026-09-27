@@ -27,3 +27,6 @@ COPY --from=builder /app/packages/shared ./packages/shared
 
 EXPOSE 8080
 CMD ["sh", "-c", "npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && node apps/api/dist/main.js"]
+
+# Seed admin (run from Railway Console after deploy):
+#   node --import tsx apps/api/prisma/seed.ts
