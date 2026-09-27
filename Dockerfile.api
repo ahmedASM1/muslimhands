@@ -9,7 +9,7 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm run build:api
 
-FROM node:22-bookworm-slim AS runner
+FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV API_HOST=0.0.0.0
@@ -25,11 +25,11 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api ./apps/api
 COPY --from=builder /app/packages/shared ./packages/shared
 
-# Regenerate Prisma client for this image's OpenSSL (debian 3.x)
-RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
+# Ensure client engines match this image (OpenSSL 3)
+RUN pnpm --filter @mh/api exec prisma generate
 
 EXPOSE 8080
-CMD ["sh", "-c", "npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && node apps/api/dist/main.js"]
+CMD ["sh", "-c", "pnpm --filter @mh/api exec prisma migrate deploy && node apps/api/dist/main.js"]
 
 # Seed admin (Railway Console, after deploy):
 #   cd apps/api && node --import tsx prisma/seed.ts
