@@ -219,7 +219,36 @@
     "lastSuccessfulAt": "Last successful: {{at}} ({{type}})",
     "lastSuccessfulNone": "Last successful: —",
     "lastFailureAt": "Last failure: {{at}}{{code}}",
-    "lastFailureNone": "Last failure: —"
+    "lastFailureNone": "Last failure: —",
+    "dataManagement": "Data management",
+    "dataManagementHint": "Permanently remove selected operational or catalog data. This cannot be undone.",
+    "dataTargets": "Data to remove",
+    "dataKeepHint": "Unchecked items are kept.",
+    "usersMode": "Users",
+    "usersKeepAll": "Keep all users",
+    "usersDeleteExcept": "Delete users except selected",
+    "usersDeleteExceptCurrent": "Delete all users except me",
+    "keepUsers": "Users to keep",
+    "confirmPhrase": "Type DELETE to confirm",
+    "confirmPhrasePlaceholder": "DELETE",
+    "purgeData": "Delete selected data",
+    "purging": "Deleting…",
+    "purgeSuccess": "Selected data was deleted.",
+    "purgeConfirm": "This permanently deletes the selected records. Continue?",
+    "targetCategories": "Categories",
+    "targetMedicines": "Medicines / items",
+    "targetBatches": "Batches",
+    "targetWarehouseStock": "Warehouse stock",
+    "targetPharmacyStock": "Pharmacy stock",
+    "targetReceipts": "Receipts",
+    "targetSupplyRequests": "Supply requests",
+    "targetTransfers": "Transfers",
+    "targetDispensing": "Dispensing records",
+    "targetBeneficiaries": "Beneficiaries",
+    "targetStockMovements": "Stock movements",
+    "targetNotifications": "Notifications",
+    "targetAuditLogs": "Audit logs",
+    "cascadeNote": "Removing categories or medicines also clears related stock, batches, and movement history."
   },
   "notifications": {
     "title": "Notifications",
@@ -730,6 +759,7 @@
     "editUnit": "Edit unit",
     "createCategory": "Create Category",
     "editCategory": "Edit category",
+    "import": "Import",
     "close": "Close",
     "save": "Save"
   },
@@ -1000,10 +1030,15 @@
       "batchMfg": " · mfg {{date}}",
       "confirmDeactivate": "Deactivate this medicine?",
       "confirmActivate": "Activate this medicine?",
+      "importHint": "CSV/Excel columns: name, category, unit, strength, dosage_form, sku, barcode, generic_name, item_type",
+      "importResult": "Import finished: {{created}} created, {{updated}} updated, {{skipped}} skipped.",
+      "strengthRequiredHint": "Strength is required for this dosage form (e.g. 500mg).",
       "validation": {
         "nameRequired": "Name is required",
         "categoryRequired": "Category is required",
         "unitRequired": "Unit is required",
+        "strengthRequired": "Strength is required for this dosage form",
+        "formIncomplete": "Please fill the required fields (name, category, unit, and strength when needed)",
         "minimumStock": "Minimum stock must be 0 or greater",
         "reorderQuantity": "Reorder quantity must be 0 or greater"
       },
@@ -1037,11 +1072,17 @@
     },
     "categories": {
       "title": "Categories",
-      "subtitle": "Organize the medicine catalog by therapeutic group.",
+      "subtitle": "Organize the catalog by therapeutic group and primary type (medicines or medical supplies).",
       "searchPlaceholder": "Search categories",
       "empty": "No categories yet.",
       "confirmDeactivate": "Deactivate this category?",
-      "confirmActivate": "Activate this category?"
+      "confirmActivate": "Activate this category?",
+      "customType": "Add new type…",
+      "customTypeLabel": "Custom type name",
+      "customTypePlaceholder": "e.g. Equipment",
+      "customTypeRequired": "Enter a custom type name",
+      "importHint": "CSV/Excel columns: name, description, item_type (MEDICINE or MEDICAL_SUPPLY)",
+      "importResult": "Import finished: {{created}} created, {{updated}} updated, {{skipped}} skipped."
     }
   }
 }

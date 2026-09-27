@@ -4,7 +4,7 @@
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditAction, DosageForm as SharedDosageForm } from '@mh/shared';
+import { AuditAction, DosageForm as SharedDosageForm, normalizeCatalogItemType } from '@mh/shared';
 import { DosageForm, Prisma } from '@prisma/client';
 import { IsBooleanString, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
@@ -17,6 +17,7 @@ import {
   requiresStrength,
   validateMedicineNumbers,
 } from '../catalog/catalog-rules';
+import { parseSpreadsheetRows, pickField } from '../catalog/spreadsheet-import';
 
 export class MedicineQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -116,8 +117,8 @@ export class MedicinesService {
     },
     userId: string,
   ) {
-    this.assertCreatePayload(data);
-    await this.assertActiveCategory(data.categoryId);
+    const category = await this.assertActiveCategory(data.categoryId);
+    this.assertCreatePayload(data, category.itemType);
     await this.assertActiveUnit(data.unitId);
     const sku = await this.resolveSku(data.sku, data.name, data.strength);
     const barcode = this.normalizeBarcode(data.barcode);
@@ -230,18 +231,180 @@ export class MedicinesService {
     return this.update(id, { isActive }, userId);
   }
 
-  private assertCreatePayload(data: {
-    name: string;
-    strength?: string;
-    dosageForm: DosageForm;
-    minimumStock: number;
-    reorderQuantity: number;
-    referenceValue?: number;
-  }) {
+  async importFromFile(file: { buffer: Buffer; originalname: string }, userId: string) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Upload a CSV or Excel file');
+    }
+
+    let rows: Record<string, string>[];
+    try {
+      rows = await parseSpreadsheetRows(file.buffer, file.originalname);
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'Unable to parse file');
+    }
+
+    if (!rows.length) {
+      throw new BadRequestException('No data rows found in the file');
+    }
+
+    const categories = await this.prisma.medicineCategory.findMany({ where: { deletedAt: null } });
+    const units = await this.prisma.unit.findMany();
+    const categoryByName = new Map(categories.map((item) => [item.name.toLowerCase(), item]));
+    const unitByCode = new Map(units.map((item) => [item.code.toLowerCase(), item]));
+    const unitByName = new Map(units.map((item) => [item.name.toLowerCase(), item]));
+
+    const created: string[] = [];
+    const updated: string[] = [];
+    const skipped: { row: number; reason: string }[] = [];
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index]!;
+      const name = pickField(row, 'name', 'medicine', 'medicine_name', 'الاسم');
+      if (!name || name.length < 2) {
+        skipped.push({ row: index + 2, reason: 'Missing or short name' });
+        continue;
+      }
+
+      const categoryName = pickField(row, 'category', 'category_name', 'التصنيف');
+      let category = categoryName ? categoryByName.get(categoryName.toLowerCase()) : undefined;
+      if (!category && categoryName) {
+        const itemType = normalizeCatalogItemType(
+          pickField(row, 'item_type', 'itemtype', 'type', 'النوع') || 'MEDICINE',
+        );
+        category = await this.prisma.medicineCategory.create({
+          data: { name: categoryName, itemType },
+        });
+        categoryByName.set(category.name.toLowerCase(), category);
+      }
+      if (!category) {
+        skipped.push({ row: index + 2, reason: 'Category is required' });
+        continue;
+      }
+
+      const unitRaw = pickField(row, 'unit', 'unit_code', 'unit_name', 'الوحدة');
+      const unit =
+        (unitRaw ? unitByCode.get(unitRaw.toLowerCase()) : undefined) ??
+        (unitRaw ? unitByName.get(unitRaw.toLowerCase()) : undefined) ??
+        units.find((item) => item.code === 'UNIT' || item.code === 'PIECE') ??
+        units[0];
+      if (!unit) {
+        skipped.push({ row: index + 2, reason: 'No unit available' });
+        continue;
+      }
+
+      const dosageRaw = pickField(row, 'dosage_form', 'dosageform', 'form', 'الشكل').toUpperCase();
+      const dosageForm = (Object.values(DosageForm).includes(dosageRaw as DosageForm)
+        ? dosageRaw
+        : category.itemType === 'MEDICINE'
+          ? DosageForm.TABLET
+          : DosageForm.OTHER) as DosageForm;
+
+      const strength = pickField(row, 'strength', 'concentration', 'التركيز') || undefined;
+      const sku = pickField(row, 'sku', 'code') || undefined;
+      const barcode = pickField(row, 'barcode') || undefined;
+      const genericName = pickField(row, 'generic_name', 'generic', 'الاسم_العلمي') || undefined;
+      const brandName = pickField(row, 'brand_name', 'brand') || undefined;
+      const description = pickField(row, 'description', 'الوصف') || undefined;
+      const minimumStock = Number(pickField(row, 'minimum_stock', 'min_stock') || '0') || 0;
+      const reorderQuantity = Number(pickField(row, 'reorder_quantity', 'reorder') || '0') || 0;
+
+      try {
+        const existing = sku
+          ? await this.prisma.medicine.findFirst({
+              where: {
+                OR: [{ sku: sku.toUpperCase() }, { name: { equals: name, mode: 'insensitive' } }],
+                deletedAt: null,
+              },
+            })
+          : await this.prisma.medicine.findFirst({
+              where: { name: { equals: name, mode: 'insensitive' }, deletedAt: null },
+            });
+
+        if (existing) {
+          await this.update(
+            existing.id,
+            {
+              categoryId: category.id,
+              unitId: unit.id,
+              name,
+              genericName,
+              brandName,
+              strength,
+              dosageForm,
+              sku: sku?.toUpperCase(),
+              barcode,
+              minimumStock,
+              reorderQuantity,
+              description,
+              isActive: true,
+            },
+            userId,
+          );
+          updated.push(name);
+        } else {
+          await this.create(
+            {
+              categoryId: category.id,
+              unitId: unit.id,
+              name,
+              genericName,
+              brandName,
+              strength,
+              dosageForm,
+              sku,
+              barcode,
+              minimumStock,
+              reorderQuantity,
+              description,
+            },
+            userId,
+          );
+          created.push(name);
+        }
+      } catch (error) {
+        skipped.push({
+          row: index + 2,
+          reason: error instanceof Error ? error.message : 'Failed to save row',
+        });
+      }
+    }
+
+    await this.audit.record({
+      userId,
+      action: AuditAction.IMPORT_MEDICINES,
+      entityType: 'Medicine',
+      entityId: userId,
+      newValues: {
+        created: created.length,
+        updated: updated.length,
+        skipped: skipped.length,
+        filename: file.originalname,
+      },
+    });
+
+    return {
+      created: created.length,
+      updated: updated.length,
+      skipped: skipped.length,
+      details: { created, updated, skipped },
+    };
+  }
+
+  private assertCreatePayload(
+    data: {
+      name: string;
+      strength?: string;
+      dosageForm: DosageForm;
+      minimumStock: number;
+      reorderQuantity: number;
+      referenceValue?: number;
+    },
+    itemType?: string | null,
+  ) {
     if (!data.name?.trim()) {
       throw new BadRequestException('Name is required');
     }
-    if (requiresStrength(data.dosageForm as SharedDosageForm) && !data.strength?.trim()) {
+    if (requiresStrength(data.dosageForm as SharedDosageForm, itemType) && !data.strength?.trim()) {
       throw new BadRequestException('Strength is required for this dosage form');
     }
     const numberError = validateMedicineNumbers(data);
@@ -260,6 +423,7 @@ export class MedicinesService {
     if (!category.isActive) {
       throw new BadRequestException('Cannot use an inactive category');
     }
+    return category;
   }
 
   private async assertActiveUnit(unitId: string) {

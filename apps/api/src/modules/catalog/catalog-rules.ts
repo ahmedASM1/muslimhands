@@ -19,7 +19,11 @@ export function isValidBarcode(barcode?: string | null): boolean {
   return BARCODE_PATTERN.test(barcode.trim());
 }
 
-export function requiresStrength(dosageForm: DosageForm): boolean {
+export function requiresStrength(dosageForm: DosageForm, itemType?: string | null): boolean {
+  // Medical supplies and custom non-medicine types do not need strength.
+  if (itemType && itemType !== 'MEDICINE') {
+    return false;
+  }
   return dosageForm !== DosageForm.OTHER;
 }
 

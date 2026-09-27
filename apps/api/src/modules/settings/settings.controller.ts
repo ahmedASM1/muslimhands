@@ -1,7 +1,20 @@
 import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEmail, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { AuditAction, PERMISSIONS } from '@mh/shared';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -29,6 +42,40 @@ class UpdateSettingsDto {
 class TestEmailDto {
   @IsEmail()
   to: string;
+}
+
+class PurgeTargetsDto {
+  @IsOptional() @IsBoolean() categories?: boolean;
+  @IsOptional() @IsBoolean() medicines?: boolean;
+  @IsOptional() @IsBoolean() batches?: boolean;
+  @IsOptional() @IsBoolean() warehouseStock?: boolean;
+  @IsOptional() @IsBoolean() pharmacyStock?: boolean;
+  @IsOptional() @IsBoolean() receipts?: boolean;
+  @IsOptional() @IsBoolean() supplyRequests?: boolean;
+  @IsOptional() @IsBoolean() transfers?: boolean;
+  @IsOptional() @IsBoolean() dispensing?: boolean;
+  @IsOptional() @IsBoolean() beneficiaries?: boolean;
+  @IsOptional() @IsBoolean() stockMovements?: boolean;
+  @IsOptional() @IsBoolean() notifications?: boolean;
+  @IsOptional() @IsBoolean() auditLogs?: boolean;
+}
+
+class PurgeDataDto {
+  @IsString()
+  confirmPhrase: string;
+
+  @ValidateNested()
+  @Type(() => PurgeTargetsDto)
+  targets: PurgeTargetsDto;
+
+  @IsOptional()
+  @IsIn(['keep_all', 'delete_except', 'delete_all_except_current'])
+  usersMode?: 'keep_all' | 'delete_except' | 'delete_all_except_current';
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  keepUserIds?: string[];
 }
 
 @ApiTags('settings')
@@ -93,5 +140,11 @@ export class SettingsController {
         : 'Unable to queue test email. Check email configuration.',
       emailLogId: result.emailLogId,
     };
+  }
+
+  @Post('data-purge')
+  @RequirePermissions(PERMISSIONS.SETTINGS_UPDATE)
+  purgeData(@CurrentUser() user: RequestUser, @Body() body: PurgeDataDto) {
+    return this.service.purgeData(body, user.id);
   }
 }

@@ -1,9 +1,10 @@
-﻿import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction } from '@mh/shared';
+﻿import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { AuditAction, normalizeCatalogItemType, SYSTEM_CATALOG_ITEM_TYPES } from '@mh/shared';
 import { IsBooleanString, IsOptional } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { parseSpreadsheetRows, pickField } from '../catalog/spreadsheet-import';
 
 export class CategoryQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -47,6 +48,34 @@ export class CategoriesService {
     };
   }
 
+  async listItemTypes() {
+    const custom = await this.prisma.medicineCategory.findMany({
+      where: { deletedAt: null },
+      distinct: ['itemType'],
+      select: { itemType: true },
+      orderBy: { itemType: 'asc' },
+    });
+    const systemCodes = new Set(SYSTEM_CATALOG_ITEM_TYPES.map((item: { code: string }) => item.code));
+    const customTypes = custom
+      .map((row) => row.itemType)
+      .filter((code) => !systemCodes.has(code));
+
+    return {
+      system: SYSTEM_CATALOG_ITEM_TYPES.map((item: { code: string; labelEn: string; labelAr: string }) => ({
+        code: item.code,
+        labelEn: item.labelEn,
+        labelAr: item.labelAr,
+        isSystem: true,
+      })),
+      custom: customTypes.map((code) => ({
+        code,
+        labelEn: code.replaceAll('_', ' '),
+        labelAr: code.replaceAll('_', ' '),
+        isSystem: false,
+      })),
+    };
+  }
+
   async get(id: string) {
     const category = await this.prisma.medicineCategory.findFirst({
       where: { id, deletedAt: null },
@@ -58,22 +87,53 @@ export class CategoriesService {
     return this.withStatus(category);
   }
 
-  async create(data: { name: string; description?: string }, userId: string) {
-    await this.assertUniqueName(data.name);
-    const category = await this.prisma.medicineCategory.create({
-      data: { name: data.name.trim(), description: data.description?.trim() },
+  async create(
+    data: { name: string; description?: string; itemType?: string },
+    userId: string,
+  ) {
+    const name = data.name.trim();
+    const itemType = normalizeCatalogItemType(data.itemType);
+    const existing = await this.prisma.medicineCategory.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
     });
+    if (existing && !existing.deletedAt) {
+      throw new ConflictException('A category with this name already exists');
+    }
+
+    const category = existing
+      ? await this.prisma.medicineCategory.update({
+          where: { id: existing.id },
+          data: {
+            name,
+            description: data.description?.trim() || null,
+            itemType,
+            isActive: true,
+            deletedAt: null,
+          },
+        })
+      : await this.prisma.medicineCategory.create({
+          data: {
+            name,
+            description: data.description?.trim() || null,
+            itemType,
+          },
+        });
+
     await this.audit.record({
       userId,
       action: AuditAction.CREATE_CATEGORY,
       entityType: 'MedicineCategory',
       entityId: category.id,
-      newValues: data,
+      newValues: { name, description: data.description, itemType },
     });
     return this.withStatus(category);
   }
 
-  async update(id: string, data: { name?: string; description?: string; isActive?: boolean }, userId: string) {
+  async update(
+    id: string,
+    data: { name?: string; description?: string; itemType?: string; isActive?: boolean },
+    userId: string,
+  ) {
     const existing = await this.prisma.medicineCategory.findFirst({ where: { id, deletedAt: null } });
     if (!existing) {
       throw new NotFoundException('Category not found');
@@ -86,6 +146,7 @@ export class CategoriesService {
       data: {
         name: data.name?.trim(),
         description: data.description?.trim(),
+        itemType: data.itemType !== undefined ? normalizeCatalogItemType(data.itemType) : undefined,
         isActive: data.isActive,
       },
     });
@@ -102,6 +163,99 @@ export class CategoriesService {
 
   setStatus(id: string, isActive: boolean, userId: string) {
     return this.update(id, { isActive }, userId);
+  }
+
+  async importFromFile(file: { buffer: Buffer; originalname: string }, userId: string) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Upload a CSV or Excel file');
+    }
+
+    let rows: Record<string, string>[];
+    try {
+      rows = await parseSpreadsheetRows(file.buffer, file.originalname);
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'Unable to parse file');
+    }
+
+    if (!rows.length) {
+      throw new BadRequestException('No data rows found in the file');
+    }
+
+    const created: string[] = [];
+    const updated: string[] = [];
+    const skipped: { row: number; reason: string }[] = [];
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index]!;
+      const name = pickField(row, 'name', 'category', 'category_name', 'الاسم');
+      if (!name || name.length < 2) {
+        skipped.push({ row: index + 2, reason: 'Missing or short name' });
+        continue;
+      }
+      const description = pickField(row, 'description', 'desc', 'الوصف') || undefined;
+      const itemType = normalizeCatalogItemType(
+        pickField(row, 'item_type', 'itemtype', 'type', 'catalog_type', 'النوع') || 'MEDICINE',
+      );
+
+      try {
+        const existing = await this.prisma.medicineCategory.findFirst({
+          where: { name: { equals: name, mode: 'insensitive' } },
+        });
+        if (existing && !existing.deletedAt) {
+          await this.prisma.medicineCategory.update({
+            where: { id: existing.id },
+            data: {
+              description: description ?? existing.description,
+              itemType,
+              isActive: true,
+            },
+          });
+          updated.push(name);
+        } else if (existing) {
+          await this.prisma.medicineCategory.update({
+            where: { id: existing.id },
+            data: {
+              name,
+              description: description ?? null,
+              itemType,
+              isActive: true,
+              deletedAt: null,
+            },
+          });
+          updated.push(name);
+        } else {
+          await this.prisma.medicineCategory.create({
+            data: { name, description: description ?? null, itemType },
+          });
+          created.push(name);
+        }
+      } catch (error) {
+        skipped.push({
+          row: index + 2,
+          reason: error instanceof Error ? error.message : 'Failed to save row',
+        });
+      }
+    }
+
+    await this.audit.record({
+      userId,
+      action: AuditAction.IMPORT_CATEGORIES,
+      entityType: 'MedicineCategory',
+      entityId: userId,
+      newValues: {
+        created: created.length,
+        updated: updated.length,
+        skipped: skipped.length,
+        filename: file.originalname,
+      },
+    });
+
+    return {
+      created: created.length,
+      updated: updated.length,
+      skipped: skipped.length,
+      details: { created, updated, skipped },
+    };
   }
 
   private async assertUniqueName(name: string, excludeId?: string) {

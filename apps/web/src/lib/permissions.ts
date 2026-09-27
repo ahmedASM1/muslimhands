@@ -51,18 +51,35 @@ const ALIASES: Record<string, string[]> = {
   'notification:view': ['notifications:read'],
   'beneficiaries:create': ['beneficiary:create'],
   'beneficiary:create': ['beneficiaries:create'],
+  'medicines:read': ['medicine:view'],
+  'medicine:view': ['medicines:read'],
   'medicines:create': ['medicine:create'],
+  'medicine:create': ['medicines:create'],
   'medicines:update': ['medicine:update'],
+  'medicine:update': ['medicines:update'],
+  'categories:read': ['category:view'],
+  'category:view': ['categories:read'],
   'categories:create': ['category:create', 'category:manage'],
+  'category:create': ['categories:create', 'category:manage'],
   'categories:update': ['category:update', 'category:manage'],
+  'category:update': ['categories:update', 'category:manage'],
+  'units:read': ['unit:view'],
+  'unit:view': ['units:read'],
   'units:create': ['unit:create', 'unit:manage'],
+  'unit:create': ['units:create', 'unit:manage'],
   'units:update': ['unit:update', 'unit:manage'],
+  'unit:update': ['units:update', 'unit:manage'],
+  'batches:read': ['batch:view'],
+  'batch:view': ['batches:read'],
   'batches:create': ['batch:create', 'batch:manage'],
+  'batch:create': ['batches:create', 'batch:manage'],
   'batches:update': ['batch:update', 'batch:manage'],
+  'batch:update': ['batches:update', 'batch:manage'],
 };
 
 export function hasPermission(user: AuthenticatedUser | null, permission: string) {
   if (!user) return false;
+  if (user.roles?.includes('SUPER_ADMIN' as AuthenticatedUser['roles'][number])) return true;
   if (user.permissions.includes(permission as never)) return true;
   return (ALIASES[permission] ?? []).some((code) => user.permissions.includes(code as never));
 }

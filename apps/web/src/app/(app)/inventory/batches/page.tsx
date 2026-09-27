@@ -2,9 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { FormModal } from '@/components/form-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/i18n';
@@ -131,6 +132,7 @@ export default function BatchesPage() {
         </div>
         {canCreate ? (
           <Button
+            type="button"
             onClick={() => {
               setEditing(null);
               setForm({ medicineId: '', batchNumber: '', manufacturingDate: '', expiryDate: '' });
@@ -180,7 +182,16 @@ export default function BatchesPage() {
           <CardContent className="space-y-3 p-8 text-center">
             <p className="text-sm text-muted-foreground">{t('inventory.batches.empty')}</p>
             {canCreate ? (
-              <Button onClick={() => setOpen(true)}>{t('actions.addBatch')}</Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setEditing(null);
+                  setForm({ medicineId: '', batchNumber: '', manufacturingDate: '', expiryDate: '' });
+                  setOpen(true);
+                }}
+              >
+                {t('actions.addBatch')}
+              </Button>
             ) : null}
           </CardContent>
         </Card>
@@ -236,73 +247,70 @@ export default function BatchesPage() {
         </div>
       )}
 
-      {open ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{editing ? t('actions.editBatch') : t('actions.addBatch')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="grid gap-3 md:grid-cols-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                save.mutate();
-              }}
+      <FormModal
+        open={open}
+        title={editing ? t('actions.editBatch') : t('actions.addBatch')}
+        onClose={() => setOpen(false)}
+      >
+        <form
+          className="grid gap-3 md:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            save.mutate();
+          }}
+        >
+          <div className="space-y-1 md:col-span-2">
+            <Label>{t('table.medicine')}</Label>
+            <select
+              className="h-10 w-full rounded-md border px-3 text-sm"
+              value={form.medicineId}
+              onChange={(event) => setForm({ ...form, medicineId: event.target.value })}
+              required
+              disabled={Boolean(editing)}
             >
-              <div className="space-y-1 md:col-span-2">
-                <Label>{t('table.medicine')}</Label>
-                <select
-                  className="h-10 w-full rounded-md border px-3 text-sm"
-                  value={form.medicineId}
-                  onChange={(event) => setForm({ ...form, medicineId: event.target.value })}
-                  required
-                  disabled={Boolean(editing)}
-                >
-                  <option value="">{t('common.selectMedicine')}</option>
-                  {(medicines.data?.items ?? []).map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label>{t('inventory.batches.batchNumberLabel')}</Label>
-                <Input
-                  value={form.batchNumber}
-                  onChange={(event) => setForm({ ...form, batchNumber: event.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>{t('inventory.batches.manufacturingDateLabel')}</Label>
-                <Input
-                  type="date"
-                  value={form.manufacturingDate}
-                  onChange={(event) => setForm({ ...form, manufacturingDate: event.target.value })}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>{t('inventory.batches.expiryDateLabel')}</Label>
-                <Input
-                  type="date"
-                  value={form.expiryDate}
-                  onChange={(event) => setForm({ ...form, expiryDate: event.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex gap-2 md:col-span-2">
-                <Button type="submit" disabled={save.isPending}>
-                  {t('common.save')}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                  {t('common.cancel')}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      ) : null}
+              <option value="">{t('common.selectMedicine')}</option>
+              {(medicines.data?.items ?? []).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label>{t('inventory.batches.batchNumberLabel')}</Label>
+            <Input
+              value={form.batchNumber}
+              onChange={(event) => setForm({ ...form, batchNumber: event.target.value })}
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>{t('inventory.batches.manufacturingDateLabel')}</Label>
+            <Input
+              type="date"
+              value={form.manufacturingDate}
+              onChange={(event) => setForm({ ...form, manufacturingDate: event.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>{t('inventory.batches.expiryDateLabel')}</Label>
+            <Input
+              type="date"
+              value={form.expiryDate}
+              onChange={(event) => setForm({ ...form, expiryDate: event.target.value })}
+              required
+            />
+          </div>
+          <div className="flex gap-2 md:col-span-2">
+            <Button type="submit" disabled={save.isPending}>
+              {t('common.save')}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+          </div>
+        </form>
+      </FormModal>
     </div>
   );
 }

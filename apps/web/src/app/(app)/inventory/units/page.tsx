@@ -2,9 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { FormModal } from '@/components/form-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/i18n';
@@ -98,6 +99,7 @@ export default function UnitsPage() {
         </div>
         {canManage ? (
           <Button
+            type="button"
             onClick={() => {
               setEditing(null);
               setForm({ name: '', code: '', description: '' });
@@ -127,7 +129,18 @@ export default function UnitsPage() {
         <Card>
           <CardContent className="space-y-3 p-8 text-center">
             <p className="text-sm text-muted-foreground">{t('inventory.units.empty')}</p>
-            {canManage ? <Button onClick={() => setOpen(true)}>{t('actions.addUnit')}</Button> : null}
+            {canManage ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  setEditing(null);
+                  setForm({ name: '', code: '', description: '' });
+                  setOpen(true);
+                }}
+              >
+                {t('actions.addUnit')}
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       ) : (
@@ -195,43 +208,40 @@ export default function UnitsPage() {
         </div>
       )}
 
-      {open ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{editing ? t('actions.editUnit') : t('actions.addUnit')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="grid gap-3 md:grid-cols-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                save.mutate();
-              }}
-            >
-              <div className="space-y-1">
-                <Label>{t('table.name')}</Label>
-                <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-              </div>
-              <div className="space-y-1">
-                <Label>{t('table.code')}</Label>
-                <Input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required />
-              </div>
-              <div className="space-y-1">
-                <Label>{t('table.description')}</Label>
-                <Input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
-              </div>
-              <div className="flex gap-2 md:col-span-3">
-                <Button type="submit" disabled={save.isPending}>
-                  {t('common.save')}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                  {t('common.cancel')}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      ) : null}
+      <FormModal
+        open={open}
+        title={editing ? t('actions.editUnit') : t('actions.addUnit')}
+        onClose={() => setOpen(false)}
+      >
+        <form
+          className="grid gap-3 md:grid-cols-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            save.mutate();
+          }}
+        >
+          <div className="space-y-1">
+            <Label>{t('table.name')}</Label>
+            <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+          </div>
+          <div className="space-y-1">
+            <Label>{t('table.code')}</Label>
+            <Input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} required />
+          </div>
+          <div className="space-y-1">
+            <Label>{t('table.description')}</Label>
+            <Input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+          </div>
+          <div className="flex gap-2 md:col-span-3">
+            <Button type="submit" disabled={save.isPending}>
+              {t('common.save')}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+          </div>
+        </form>
+      </FormModal>
     </div>
   );
 }

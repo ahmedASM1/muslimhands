@@ -2,17 +2,18 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useI18n } from '@/i18n';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { FormModal } from '@/components/form-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiList, apiRequest } from '@/lib/api';
+import { apiList, apiRequest, apiUpload } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { DOSAGE_FORMS, formatLabel } from '@/lib/catalog';
 import { hasPermission } from '@/lib/permissions';
@@ -22,6 +23,7 @@ interface NamedRef {
   id: string;
   name: string;
   code?: string;
+  itemType?: string;
 }
 
 interface BatchRow {
@@ -67,11 +69,17 @@ type MedicineForm = {
   description?: string;
 };
 
+function needsStrength(dosageForm: string, itemType?: string | null) {
+  if (itemType && itemType !== 'MEDICINE') return false;
+  return dosageForm !== 'OTHER';
+}
+
 export default function MedicinesPage() {
   const { t } = useI18n();
   const client = useQueryClient();
   const { user } = useAuth();
   const toast = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const medicineSchema = useMemo(
     () =>
@@ -150,8 +158,26 @@ export default function MedicinesPage() {
     },
   });
 
+  const watchedCategoryId = useWatch({ control: form.control, name: 'categoryId' });
+  const watchedDosageForm = useWatch({ control: form.control, name: 'dosageForm' });
+  const selectedCategory = (categories.data?.items ?? []).find((item) => item.id === watchedCategoryId);
+  const strengthRequired = needsStrength(watchedDosageForm, selectedCategory?.itemType);
+
+  useEffect(() => {
+    if (!selectedCategory) return;
+    if (selectedCategory.itemType && selectedCategory.itemType !== 'MEDICINE') {
+      if (form.getValues('dosageForm') !== 'OTHER') {
+        form.setValue('dosageForm', 'OTHER');
+      }
+    }
+  }, [selectedCategory, form]);
+
   const save = useMutation({
     mutationFn: (values: MedicineForm) => {
+      const category = (categories.data?.items ?? []).find((item) => item.id === values.categoryId);
+      if (needsStrength(values.dosageForm, category?.itemType) && !(values.strength ?? '').trim()) {
+        throw new Error(t('inventory.medicines.validation.strengthRequired'));
+      }
       const body = {
         ...values,
         sku: values.sku || undefined,
@@ -182,6 +208,27 @@ export default function MedicinesPage() {
     onSuccess: () => {
       toast.push(t('toasts.medicineStatusUpdated'));
       client.invalidateQueries({ queryKey: ['medicines'] });
+    },
+    onError: (error) => toast.push((error as Error).message, 'error'),
+  });
+
+  const importFile = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return apiUpload<{ created: number; updated: number; skipped: number }>('/medicines/import', formData);
+    },
+    onSuccess: (result) => {
+      toast.push(
+        t('inventory.medicines.importResult', {
+          created: result.created,
+          updated: result.updated,
+          skipped: result.skipped,
+        }),
+      );
+      client.invalidateQueries({ queryKey: ['medicines'] });
+      client.invalidateQueries({ queryKey: ['categories'] });
+      client.invalidateQueries({ queryKey: ['categories-active'] });
     },
     onError: (error) => toast.push((error as Error).message, 'error'),
   });
@@ -241,8 +288,28 @@ export default function MedicinesPage() {
           <h1 className="text-2xl font-semibold">{t('inventory.medicines.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('inventory.medicines.subtitle')}</p>
         </div>
-        {canCreate ? <Button onClick={startCreate}>{t('actions.addMedicine')}</Button> : null}
+        {canCreate ? (
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={importFile.isPending}>
+              {importFile.isPending ? t('common.saving') : t('actions.import')}
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) importFile.mutate(file);
+                event.target.value = '';
+              }}
+            />
+            <Button type="button" onClick={startCreate}>{t('actions.addMedicine')}</Button>
+          </div>
+        ) : null}
       </div>
+
+      {canCreate ? <p className="text-xs text-muted-foreground">{t('inventory.medicines.importHint')}</p> : null}
 
       <div className="grid gap-2 md:grid-cols-4">
         <Input placeholder={t('inventory.medicines.searchPlaceholder')} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
@@ -252,27 +319,27 @@ export default function MedicinesPage() {
             <option key={item.id} value={item.id}>{item.name}</option>
           ))}
         </select>
+        <select className="h-10 rounded-md border px-3 text-sm" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+          <option value="">{t('common.allStatuses')}</option>
+          <option value="ACTIVE">{t('status.ACTIVE')}</option>
+          <option value="INACTIVE">{t('status.INACTIVE')}</option>
+        </select>
         <select className="h-10 rounded-md border px-3 text-sm" value={dosageForm} onChange={(event) => { setDosageForm(event.target.value); setPage(1); }}>
           <option value="">{t('inventory.medicines.allDosageForms')}</option>
           {DOSAGE_FORMS.map((item) => (
             <option key={item} value={item}>{formatLabel(item)}</option>
           ))}
         </select>
-        <select className="h-10 rounded-md border px-3 text-sm" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
-          <option value="">{t('common.allStatuses')}</option>
-          <option value="ACTIVE">{t('status.ACTIVE')}</option>
-          <option value="INACTIVE">{t('status.INACTIVE')}</option>
-        </select>
       </div>
 
-      {medicines.isLoading ? <div className="h-40 animate-pulse rounded-lg bg-muted" /> : null}
+      {medicines.isLoading ? <div className="h-32 animate-pulse rounded-lg bg-muted" /> : null}
       {medicines.error ? <p className="text-sm text-destructive">{(medicines.error as Error).message}</p> : null}
 
       {!medicines.isLoading && rows.length === 0 ? (
         <Card>
           <CardContent className="space-y-3 p-8 text-center">
             <p className="text-sm text-muted-foreground">{t('inventory.medicines.empty')}</p>
-            {canCreate ? <Button onClick={startCreate}>{t('actions.addMedicine')}</Button> : null}
+            {canCreate ? <Button type="button" onClick={startCreate}>{t('actions.addMedicine')}</Button> : null}
           </CardContent>
         </Card>
       ) : (
@@ -288,7 +355,11 @@ export default function MedicinesPage() {
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id} className="border-t">
-                  <td className="px-3 py-2 font-medium">{row.name}</td>
+                  <td className="px-3 py-2 font-medium">
+                    <button type="button" className="text-left hover:underline" onClick={() => setSelected(row)}>
+                      {row.name}
+                    </button>
+                  </td>
                   <td className="px-3 py-2">{row.genericName || emDash}</td>
                   <td className="px-3 py-2">{row.strength || emDash}</td>
                   <td className="px-3 py-2">{formatLabel(row.dosageForm)}</td>
@@ -301,8 +372,9 @@ export default function MedicinesPage() {
                   <td className="px-3 py-2"><Badge>{row.status}</Badge></td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
-                      <Button size="sm" variant="outline" onClick={() => setSelected(row)}>{t('actions.view')}</Button>
-                      {canUpdate ? <Button size="sm" variant="outline" onClick={() => startEdit(row)}>{t('actions.edit')}</Button> : null}
+                      {canUpdate ? (
+                        <Button size="sm" variant="outline" onClick={() => startEdit(row)}>{t('actions.edit')}</Button>
+                      ) : null}
                       {canUpdate ? (
                         <Button
                           size="sm"
@@ -335,119 +407,132 @@ export default function MedicinesPage() {
         </div>
       ) : null}
 
-      {open ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{editing ? t('actions.editMedicine') : t('actions.addMedicine')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-6" onSubmit={form.handleSubmit((values) => save.mutate(values))}>
-              <section className="space-y-3">
-                <h2 className="text-sm font-semibold">{t('inventory.medicines.basicInfo')}</h2>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="space-y-1">
-                    <Label>{t('table.name')}</Label>
-                    <Input {...form.register('name')} />
-                    {form.formState.errors.name ? <p className="text-sm text-destructive">{form.formState.errors.name.message}</p> : null}
-                  </div>
-                  <div className="space-y-1">
-                    <Label>{t('table.genericName')}</Label>
-                    <Input {...form.register('genericName')} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>{t('inventory.medicines.brandName')}</Label>
-                    <Input {...form.register('brandName')} />
-                  </div>
-                </div>
-              </section>
-              <section className="space-y-3">
-                <h2 className="text-sm font-semibold">{t('inventory.medicines.classification')}</h2>
-                <div className="grid gap-3 md:grid-cols-4">
-                  <div className="space-y-1">
-                    <Label>{t('table.category')}</Label>
-                    <select className="h-10 w-full rounded-md border px-3 text-sm" {...form.register('categoryId')}>
-                      <option value="">{t('common.selectCategory')}</option>
-                      {(categories.data?.items ?? []).map((item) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
-                      ))}
-                    </select>
-                    {form.formState.errors.categoryId ? <p className="text-sm text-destructive">{form.formState.errors.categoryId.message}</p> : null}
-                  </div>
-                  <div className="space-y-1">
-                    <Label>{t('table.dosageForm')}</Label>
-                    <select className="h-10 w-full rounded-md border px-3 text-sm" {...form.register('dosageForm')}>
-                      {DOSAGE_FORMS.map((item) => (
-                        <option key={item} value={item}>{formatLabel(item)}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label>{t('table.strength')}</Label>
-                    <Input {...form.register('strength')} placeholder={t('inventory.medicines.strengthPlaceholder')} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>{t('table.unit')}</Label>
-                    <select className="h-10 w-full rounded-md border px-3 text-sm" {...form.register('unitId')}>
-                      <option value="">{t('common.selectUnit')}</option>
-                      {(units.data?.items ?? []).map((item) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
-                      ))}
-                    </select>
-                    {form.formState.errors.unitId ? <p className="text-sm text-destructive">{form.formState.errors.unitId.message}</p> : null}
-                  </div>
-                </div>
-              </section>
-              <section className="space-y-3">
-                <h2 className="text-sm font-semibold">{t('inventory.medicines.identification')}</h2>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label>{t('table.sku')}</Label>
-                    <Input {...form.register('sku')} placeholder={t('inventory.medicines.skuPlaceholder')} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>{t('table.barcode')}</Label>
-                    <Input {...form.register('barcode')} placeholder={t('inventory.medicines.barcodePlaceholder')} />
-                  </div>
-                </div>
-              </section>
-              <section className="space-y-3">
-                <h2 className="text-sm font-semibold">{t('inventory.medicines.inventoryRules')}</h2>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label>{t('table.minimumStock')}</Label>
-                    <Input type="number" min={0} {...form.register('minimumStock')} />
-                    {form.formState.errors.minimumStock ? <p className="text-sm text-destructive">{form.formState.errors.minimumStock.message}</p> : null}
-                  </div>
-                  <div className="space-y-1">
-                    <Label>{t('table.reorderQuantity')}</Label>
-                    <Input type="number" min={0} {...form.register('reorderQuantity')} />
-                    {form.formState.errors.reorderQuantity ? <p className="text-sm text-destructive">{form.formState.errors.reorderQuantity.message}</p> : null}
-                  </div>
-                </div>
-              </section>
-              <section className="space-y-3">
-                <h2 className="text-sm font-semibold">{t('inventory.medicines.optionalValue')}</h2>
-                <div className="space-y-1 md:w-1/2">
-                  <Label>{t('inventory.medicines.estimatedUnitValue')}</Label>
-                  <Input type="number" min={0} step="0.01" {...form.register('referenceValue')} />
-                  <p className="text-xs text-muted-foreground">{t('inventory.medicines.estimatedUnitValueHint')}</p>
-                </div>
-              </section>
-              <section className="space-y-3">
-                <h2 className="text-sm font-semibold">{t('inventory.medicines.additionalInfo')}</h2>
-                <div className="space-y-1">
-                  <Label>{t('table.description')}</Label>
-                  <Input {...form.register('description')} />
-                </div>
-              </section>
-              <div className="flex gap-2">
-                <Button type="submit" disabled={save.isPending}>{save.isPending ? t('common.saving') : t('common.save')}</Button>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
+      <FormModal
+        open={open}
+        title={editing ? t('actions.editMedicine') : t('actions.addMedicine')}
+        onClose={() => setOpen(false)}
+        className="max-w-4xl"
+      >
+        <form
+          className="space-y-6"
+          onSubmit={form.handleSubmit(
+            (values) => save.mutate(values),
+            () => toast.push(t('inventory.medicines.validation.formIncomplete'), 'error'),
+          )}
+        >
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold">{t('inventory.medicines.basicInfo')}</h2>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-1">
+                <Label>{t('table.name')}</Label>
+                <Input {...form.register('name')} />
+                {form.formState.errors.name ? <p className="text-sm text-destructive">{form.formState.errors.name.message}</p> : null}
               </div>
-            </form>
-          </CardContent>
-        </Card>
-      ) : null}
+              <div className="space-y-1">
+                <Label>{t('table.genericName')}</Label>
+                <Input {...form.register('genericName')} />
+              </div>
+              <div className="space-y-1">
+                <Label>{t('inventory.medicines.brandName')}</Label>
+                <Input {...form.register('brandName')} />
+              </div>
+            </div>
+          </section>
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold">{t('inventory.medicines.classification')}</h2>
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="space-y-1">
+                <Label>{t('table.category')}</Label>
+                <select className="h-10 w-full rounded-md border px-3 text-sm" {...form.register('categoryId')}>
+                  <option value="">{t('common.selectCategory')}</option>
+                  {(categories.data?.items ?? []).map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+                {form.formState.errors.categoryId ? <p className="text-sm text-destructive">{form.formState.errors.categoryId.message}</p> : null}
+              </div>
+              <div className="space-y-1">
+                <Label>{t('table.dosageForm')}</Label>
+                <select className="h-10 w-full rounded-md border px-3 text-sm" {...form.register('dosageForm')}>
+                  {DOSAGE_FORMS.map((item) => (
+                    <option key={item} value={item}>{formatLabel(item)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>
+                  {t('table.strength')}
+                  {strengthRequired ? ' *' : ''}
+                </Label>
+                <Input
+                  {...form.register('strength')}
+                  placeholder={strengthRequired ? t('inventory.medicines.strengthPlaceholder') : t('common.optional')}
+                />
+                {strengthRequired ? (
+                  <p className="text-xs text-muted-foreground">{t('inventory.medicines.strengthRequiredHint')}</p>
+                ) : null}
+              </div>
+              <div className="space-y-1">
+                <Label>{t('table.unit')}</Label>
+                <select className="h-10 w-full rounded-md border px-3 text-sm" {...form.register('unitId')}>
+                  <option value="">{t('common.selectUnit')}</option>
+                  {(units.data?.items ?? []).map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+                {form.formState.errors.unitId ? <p className="text-sm text-destructive">{form.formState.errors.unitId.message}</p> : null}
+              </div>
+            </div>
+          </section>
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold">{t('inventory.medicines.identification')}</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label>{t('table.sku')}</Label>
+                <Input {...form.register('sku')} placeholder={t('inventory.medicines.skuPlaceholder')} />
+              </div>
+              <div className="space-y-1">
+                <Label>{t('table.barcode')}</Label>
+                <Input {...form.register('barcode')} placeholder={t('inventory.medicines.barcodePlaceholder')} />
+              </div>
+            </div>
+          </section>
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold">{t('inventory.medicines.inventoryRules')}</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label>{t('table.minimumStock')}</Label>
+                <Input type="number" min={0} {...form.register('minimumStock')} />
+                {form.formState.errors.minimumStock ? <p className="text-sm text-destructive">{form.formState.errors.minimumStock.message}</p> : null}
+              </div>
+              <div className="space-y-1">
+                <Label>{t('table.reorderQuantity')}</Label>
+                <Input type="number" min={0} {...form.register('reorderQuantity')} />
+                {form.formState.errors.reorderQuantity ? <p className="text-sm text-destructive">{form.formState.errors.reorderQuantity.message}</p> : null}
+              </div>
+            </div>
+          </section>
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold">{t('inventory.medicines.optionalValue')}</h2>
+            <div className="space-y-1 md:w-1/2">
+              <Label>{t('inventory.medicines.estimatedUnitValue')}</Label>
+              <Input type="number" min={0} step="0.01" {...form.register('referenceValue')} />
+              <p className="text-xs text-muted-foreground">{t('inventory.medicines.estimatedUnitValueHint')}</p>
+            </div>
+          </section>
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold">{t('inventory.medicines.additionalInfo')}</h2>
+            <div className="space-y-1">
+              <Label>{t('table.description')}</Label>
+              <Input {...form.register('description')} />
+            </div>
+          </section>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={save.isPending}>{save.isPending ? t('common.saving') : t('common.save')}</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
+          </div>
+        </form>
+      </FormModal>
 
       {selected ? (
         <Card>

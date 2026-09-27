@@ -341,8 +341,15 @@ async function seedCatalogAndStock() {
     categoryNames.map((name) =>
       prisma.medicineCategory.upsert({
         where: { name },
-        update: { isActive: true },
-        create: { name, description: `Development category: ${name}` },
+        update: {
+          isActive: true,
+          itemType: name === 'Medical Supplies' ? 'MEDICAL_SUPPLY' : 'MEDICINE',
+        },
+        create: {
+          name,
+          description: `Development category: ${name}`,
+          itemType: name === 'Medical Supplies' ? 'MEDICAL_SUPPLY' : 'MEDICINE',
+        },
       }),
     ),
   );

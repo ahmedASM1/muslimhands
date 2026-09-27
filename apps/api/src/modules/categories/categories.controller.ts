@@ -1,5 +1,19 @@
-﻿import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+﻿import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { memoryStorage } from 'multer';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
 import { PERMISSIONS } from '@mh/shared';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -17,6 +31,10 @@ class CategoryDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  itemType?: string;
 }
 
 class UpdateCategoryDto {
@@ -28,6 +46,10 @@ class UpdateCategoryDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  itemType?: string;
 }
 
 class CategoryStatusDto {
@@ -48,6 +70,12 @@ export class CategoriesController {
     return this.service.list(query);
   }
 
+  @Get('item-types')
+  @RequirePermissions(PERMISSIONS.CATEGORIES_READ)
+  listItemTypes() {
+    return this.service.listItemTypes();
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.CATEGORIES_READ)
   get(@Param('id') id: string) {
@@ -58,6 +86,29 @@ export class CategoriesController {
   @RequirePermissions(PERMISSIONS.CATEGORIES_CREATE)
   create(@Body() dto: CategoryDto, @CurrentUser() user: RequestUser) {
     return this.service.create(dto, user.id);
+  }
+
+  @Post('import')
+  @RequirePermissions(PERMISSIONS.CATEGORIES_CREATE)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  import(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    if (!file) {
+      throw new BadRequestException('file is required');
+    }
+    return this.service.importFromFile(
+      { buffer: file.buffer, originalname: file.originalname },
+      user.id,
+    );
   }
 
   @Patch(':id')

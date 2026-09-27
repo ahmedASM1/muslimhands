@@ -160,3 +160,38 @@ export async function apiDownload(path: string, filename: string) {
   link.click();
   URL.revokeObjectURL(url);
 }
+
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  const token = getAccessToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let response = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+    credentials: 'include',
+  });
+
+  if (response.status === 401) {
+    const refreshed = await tryRefreshSession();
+    if (refreshed) {
+      const retryHeaders: Record<string, string> = {};
+      const nextToken = getAccessToken();
+      if (nextToken) retryHeaders.Authorization = `Bearer ${nextToken}`;
+      response = await fetch(`${API_URL}${path}`, {
+        method: 'POST',
+        headers: retryHeaders,
+        body: formData,
+        credentials: 'include',
+      });
+    }
+  }
+
+  const payload = await parseJsonSafe(response);
+  if (!payload || !response.ok || !payload.success) {
+    const error = payload && !payload.success ? payload.error : undefined;
+    throw new ApiClientError(error?.message ?? 'Upload failed', response.status, error?.code);
+  }
+  return payload.data as T;
+}

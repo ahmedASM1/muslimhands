@@ -1,6 +1,8 @@
-﻿import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+﻿import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { memoryStorage } from 'multer';
 import {
   IsBoolean,
   IsEnum,
@@ -169,6 +171,29 @@ export class MedicinesController {
   @RequirePermissions(PERMISSIONS.MEDICINES_CREATE)
   create(@Body() dto: MedicineDto, @CurrentUser() user: RequestUser) {
     return this.service.create(dto, user.id);
+  }
+
+  @Post('import')
+  @RequirePermissions(PERMISSIONS.MEDICINES_CREATE)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  import(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    if (!file) {
+      throw new BadRequestException('file is required');
+    }
+    return this.service.importFromFile(
+      { buffer: file.buffer, originalname: file.originalname },
+      user.id,
+    );
   }
 
   @Patch(':id')

@@ -24,6 +24,8 @@ describe('catalog rules', () => {
   it('requires strength except for OTHER dosage forms', () => {
     expect(requiresStrength(DosageForm.TABLET)).toBe(true);
     expect(requiresStrength(DosageForm.OTHER)).toBe(false);
+    expect(requiresStrength(DosageForm.TABLET, 'MEDICAL_SUPPLY')).toBe(false);
+    expect(requiresStrength(DosageForm.TABLET, 'MEDICINE')).toBe(true);
   });
 
   it('rejects negative medicine numbers', () => {
