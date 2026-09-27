@@ -95,6 +95,9 @@
   "header": {
     "searchPlaceholder": "ابحث عن الأدوية والمستفيدين والطلبات والتحويلات…",
     "searchComingSoon": "البحث الشامل قادم قريباً",
+    "searchNoResults": "لا توجد نتائج.",
+    "searchAllMedicines": "البحث في كل الأدوية عن «{{query}}»",
+    "searchAllBeneficiaries": "البحث في كل المستفيدين عن «{{query}}»",
     "alerts": "التنبيهات",
     "alertsAria": "الإشعارات",
     "alertsAriaUnread": "الإشعارات، {{count}} غير مقروء",

@@ -4,13 +4,13 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Menu, Search, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { filterNav, isNavItemActive, navIconFor, navigationFor } from '@/config/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { NotificationBell } from '@/components/notification-bell';
+import { GlobalSearch } from '@/components/global-search';
 import { LanguageSwitcher } from '@/i18n/language-switcher';
 import { useI18n } from '@/i18n/locale-context';
 import { Skeleton } from '@/components/skeleton';
@@ -205,19 +205,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Menu className="h-4 w-4" />
           </Button>
 
-          <div className="relative hidden min-w-0 flex-1 md:block">
-            <Search
-              className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              className="h-10 max-w-xl rounded-full border-border/80 bg-secondary/60 ps-9"
-              placeholder={t('header.searchPlaceholder')}
-              aria-label={t('common.search')}
-              disabled
-              title={t('header.searchComingSoon')}
-            />
-          </div>
+          <GlobalSearch className="hidden md:block" />
 
           <div className="ms-auto flex shrink-0 items-center gap-2">
             <LanguageSwitcher />

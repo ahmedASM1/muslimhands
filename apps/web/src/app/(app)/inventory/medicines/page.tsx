@@ -3,6 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useI18n } from '@/i18n';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -93,7 +94,8 @@ export default function MedicinesPage() {
   );
   const canCreate = hasPermission(user, 'medicines:create');
   const canUpdate = hasPermission(user, 'medicines:update');
-  const [search, setSearch] = useState('');
+  const searchParams = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [categoryId, setCategoryId] = useState('');
   const [status, setStatus] = useState('');
   const [dosageForm, setDosageForm] = useState('');

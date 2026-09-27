@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiList, apiRequest } from '@/lib/api';
@@ -23,7 +24,8 @@ export default function BeneficiariesPage() {
   const { t } = useI18n();
   const dash = t('common.emDash');
   const client = useQueryClient();
-  const [search, setSearch] = useState('');
+  const searchParams = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [status, setStatus] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [page, setPage] = useState(1);
   const [fullName, setFullName] = useState('');

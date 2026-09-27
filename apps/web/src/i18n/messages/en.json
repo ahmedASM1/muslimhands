@@ -95,6 +95,9 @@
   "header": {
     "searchPlaceholder": "Search medicines, beneficiaries, requests, transfers…",
     "searchComingSoon": "Global search coming soon",
+    "searchNoResults": "No matches found.",
+    "searchAllMedicines": "Search all medicines for “{{query}}”",
+    "searchAllBeneficiaries": "Search all beneficiaries for “{{query}}”",
     "alerts": "Alerts",
     "alertsAria": "Notifications",
     "alertsAriaUnread": "Notifications, {{count}} unread",
