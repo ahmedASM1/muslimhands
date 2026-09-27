@@ -17,6 +17,8 @@ export interface ReportColumn {
   key: string;
   header: string;
   render?: (row: Record<string, unknown>) => React.ReactNode;
+  /** Force LTR for phones, IDs, and other technical values in RTL UI. */
+  ltr?: boolean;
 }
 
 export interface ReportFilterField {
@@ -325,15 +327,29 @@ export function ReportPage({
             <tbody>
               {items.map((row, index) => (
                 <tr key={String(row.id ?? index)} className="border-t">
-                  {columns.map((col) => (
-                    <td key={col.key} className="px-3 py-2 align-top">
-                      {col.render
-                        ? col.render(row)
-                        : row[col.key] == null
-                          ? emDash
-                          : String(row[col.key])}
-                    </td>
-                  ))}
+                  {columns.map((col) => {
+                    const content = col.render
+                      ? col.render(row)
+                      : row[col.key] == null
+                        ? emDash
+                        : String(row[col.key]);
+                    const forceLtr =
+                      col.ltr ||
+                      /phone|number|sku|code|id$/i.test(col.key) ||
+                      col.key === 'status' ||
+                      col.key === 'beneficiaryNumber';
+                    return (
+                      <td key={col.key} className="px-3 py-2 align-top text-start">
+                        {forceLtr ? (
+                          <span dir="ltr" className="dir-ltr inline-block">
+                            {content}
+                          </span>
+                        ) : (
+                          content
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>

@@ -26,19 +26,21 @@ export default function BeneficiariesReportPage() {
         { key: 'dateTo', label: t('reports.filters.registeredTo'), type: 'date' },
       ]}
       columns={[
-        { key: 'beneficiaryNumber', header: t('reports.columns.number') },
+        { key: 'beneficiaryNumber', header: t('reports.columns.number'), ltr: true },
         { key: 'fullName', header: t('reports.columns.fullName') },
-        { key: 'phone', header: t('reports.columns.phone') },
-        { key: 'status', header: t('table.status') },
+        { key: 'phone', header: t('reports.columns.phone'), ltr: true },
+        { key: 'status', header: t('table.status'), ltr: true },
         {
           key: 'createdDate',
           header: t('reports.columns.created'),
+          ltr: true,
           render: (row) => String(row.createdDate).slice(0, 10),
         },
-        { key: 'dispensingCount', header: t('reports.columns.dispensings') },
+        { key: 'dispensingCount', header: t('reports.columns.dispensings'), ltr: true },
         {
           key: 'lastDispensingDate',
           header: t('reports.columns.lastDispensing'),
+          ltr: true,
           render: (row) => String(row.lastDispensingDate ?? t('common.emDash')).slice(0, 10),
         },
       ]}

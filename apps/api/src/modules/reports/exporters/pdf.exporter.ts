@@ -1,11 +1,16 @@
 import PDFDocument from 'pdfkit';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { ArabicShaper } from 'arabic-persian-reshaper';
+import bidiFactory from 'bidi-js';
 import type { ReportExportPayload } from '../types/report.types';
 import { EXPORT_BRAND, formatExportDate, formatExportTimestamp } from './export-brand';
 
 const ARABIC_CHAR = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const LATIN_LETTER = /[A-Za-z]/;
+/** Phones / IDs / codes that must stay left-to-right in PDF cells. */
+const LTR_TECHNICAL = /^[\s]*[+]?[\d\s\-()./#]+[\s]*$/;
+const bidi = bidiFactory();
 
 function resolveAsset(...parts: string[]): string | null {
   const candidates = [
@@ -23,6 +28,29 @@ function cellText(value: unknown): string {
   if (value == null || value === '') return '—';
   if (value instanceof Date) return value.toISOString().replace('T', ' ').slice(0, 19);
   return String(value);
+}
+
+/**
+ * PDFKit draws left-to-right and does not shape Arabic. Convert logical Arabic
+ * to visual order with connected glyphs so names render correctly.
+ */
+function prepareTextForPdf(text: string): string {
+  if (!text || text === '—') return text;
+  if (LTR_TECHNICAL.test(text) || !ARABIC_CHAR.test(text)) {
+    // Keep phones/IDs as strict LTR even inside RTL locales.
+    if (/^\+?\d/.test(text.trim()) || LTR_TECHNICAL.test(text)) {
+      return `\u202A${text}\u202C`;
+    }
+    return text;
+  }
+
+  try {
+    const reshaped = ArabicShaper.convertArabic(text);
+    const levels = bidi.getEmbeddingLevels(reshaped);
+    return bidi.getReorderedString(reshaped, levels);
+  } catch {
+    return text;
+  }
 }
 
 /** Weight columns by header + sample content so wide fields get more space. */
@@ -46,8 +74,7 @@ function splitScriptRuns(text: string): Array<{ text: string; arabic: boolean }>
   for (const ch of text) {
     const isArabic = ARABIC_CHAR.test(ch);
     const isLatin = LATIN_LETTER.test(ch);
-    const next: boolean | null =
-      isArabic ? true : isLatin ? false : arabic;
+    const next: boolean | null = isArabic ? true : isLatin ? false : arabic;
 
     if (arabic === null) {
       arabic = isArabic;
@@ -83,10 +110,11 @@ function drawText(
     ellipsis?: boolean;
   },
 ) {
-  const hasArabic = Boolean(fonts.arabic && ARABIC_CHAR.test(text));
+  const prepared = prepareTextForPdf(text);
+  const hasArabic = Boolean(fonts.arabic && ARABIC_CHAR.test(prepared));
   if (!hasArabic || !fonts.arabic) {
     doc.font(fonts.latin);
-    doc.text(text, x, y, {
+    doc.text(prepared, x, y, {
       width: options.width,
       height: options.height,
       align: options.align,
@@ -96,13 +124,13 @@ function drawText(
     return;
   }
 
-  const runs = splitScriptRuns(text);
+  const runs = splitScriptRuns(prepared);
   const hasLatinLetters = runs.some((run) => !run.arabic && LATIN_LETTER.test(run.text));
 
-  // Pure Arabic (plus digits/punctuation): one font, reliable layout.
+  // Pure Arabic (plus digits/punctuation): one font after reshape+bidi.
   if (!hasLatinLetters) {
     doc.font(fonts.arabic);
-    doc.text(text, x, y, {
+    doc.text(prepared, x, y, {
       width: options.width,
       height: options.height,
       align: options.align,
@@ -268,7 +296,7 @@ export async function exportPdf(payload: ReportExportPayload): Promise<Buffer> {
     rows.forEach((row, index) => {
       let maxHeight = 12;
       payload.columns.forEach((col, colIndex) => {
-        const text = cellText(row[col.key]);
+        const text = prepareTextForPdf(cellText(row[col.key]));
         const fontName =
           fonts.arabic && ARABIC_CHAR.test(text) ? fonts.arabic : fonts.latin;
         doc.font(fontName).fontSize(6.5);
