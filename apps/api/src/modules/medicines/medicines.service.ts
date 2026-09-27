@@ -723,8 +723,10 @@ export class MedicinesService {
       ? normalizeCatalogItemType(query.itemType) === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
       : false;
     const title = isSupply
-      ? 'Muslim Hands — Medical Supplies Catalog'
-      : 'Muslim Hands — Medicines Catalog';
+      ? 'Medical Supplies Catalog'
+      : query.itemType
+        ? 'Medicines Catalog'
+        : 'Full Catalog Export';
 
     const columns = [
       { key: 'name', header: 'Name' },
