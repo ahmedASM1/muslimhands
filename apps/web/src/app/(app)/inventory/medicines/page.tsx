@@ -84,8 +84,8 @@ type MedicineForm = {
   batchNumber?: string;
   manufacturingDate?: string;
   expiryDate?: string;
-  expiryAlertValue?: number;
-  expiryAlertUnit?: 'DAYS' | 'WEEKS' | 'MONTHS';
+  expiryAlertValue: number;
+  expiryAlertUnit: 'DAYS' | 'WEEKS' | 'MONTHS';
 };
 
 function needsStrength(dosageForm: string, itemType?: string | null) {
@@ -333,7 +333,7 @@ export default function MedicinesPage() {
     onError: (error) => toast.push((error as Error).message, 'error'),
   });
 
-  const rows = medicines.data?.items ?? [];
+  const rows = useMemo(() => medicines.data?.items ?? [], [medicines.data?.items]);
   const meta = medicines.data?.meta;
   const emDash = t('common.emDash');
 
