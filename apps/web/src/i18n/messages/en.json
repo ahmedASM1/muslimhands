@@ -1059,7 +1059,7 @@
   "admin": {
     "users": {
       "title": "Users & Employees",
-      "subtitle": "Invite staff by email, choose their role and pharmacy/warehouse, and send access via Resend.",
+      "subtitle": "Invite staff, change roles anytime, deactivate or delete accounts, and manage full platform access.",
       "inviteTitle": "Invite Employee",
       "inviteDescription": "An invitation email is sent with Resend. Pharmacy staff must accept the invite, then sign in at their pharmacy login page.",
       "emailInvitationLabel": "Email (invitation is sent here)",
@@ -1074,7 +1074,19 @@
       "selectRoleError": "Select a role",
       "selectPharmacyError": "Select a pharmacy for this role",
       "selectWarehouseError": "Select a warehouse for this role",
-      "roleOption": "{{name}} ({{code}})"
+      "roleOption": "{{name}} ({{code}})",
+      "editTitle": "Edit employee",
+      "editDescription": "Update role, status, and assignment for {{email}}.",
+      "keepSelfSuperAdminHint": "Your Super Admin role stays locked so you always keep full platform access.",
+      "cannotDemoteSelf": "You cannot remove your own Super Admin role.",
+      "cannotDeleteSelf": "You cannot delete your own account.",
+      "deleteConfirm": "Delete {{name}}? They will be removed from the platform and can be invited again later.",
+      "updated": "Employee updated",
+      "updateFailed": "Could not update employee",
+      "deactivated": "Employee deactivated",
+      "reactivated": "Employee reactivated",
+      "deleted": "Employee deleted",
+      "deleteFailed": "Could not delete employee"
     },
     "pharmacies": {
       "title": "Pharmacies",

@@ -37,6 +37,8 @@ interface UserRow {
   status: string;
   pharmacy: Assignment | null;
   warehouse: Assignment | null;
+  pharmacyId?: string | null;
+  warehouseId?: string | null;
   invitation: { id: string; status: string; expiresAt: string } | null;
   lastLoginAt: string | null;
   createdAt: string;
@@ -51,6 +53,17 @@ function codeLabel(t: (key: string) => string, prefix: string, code: string) {
   return label !== key ? label : code.replaceAll('_', ' ');
 }
 
+function emptyInviteForm() {
+  return {
+    firstName: '',
+    lastName: '',
+    email: '',
+    roleId: '',
+    pharmacyId: '',
+    warehouseId: '',
+  };
+}
+
 export default function UsersPage() {
   const { t } = useI18n();
   const client = useQueryClient();
@@ -58,6 +71,7 @@ export default function UsersPage() {
   const { user } = useAuth();
   const canInvite = hasPermission(user, 'invitations:create');
   const canUpdate = hasPermission(user, 'users:update');
+  const canDelete = hasPermission(user, 'users:delete');
 
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
@@ -67,11 +81,13 @@ export default function UsersPage() {
   const [warehouseId, setWarehouseId] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [selected, setSelected] = useState<UserRow | null>(null);
-  const [form, setForm] = useState({
+  const [editing, setEditing] = useState<UserRow | null>(null);
+  const [form, setForm] = useState(emptyInviteForm);
+  const [editForm, setEditForm] = useState({
     firstName: '',
     lastName: '',
-    email: '',
     roleId: '',
+    status: 'ACTIVE',
     pharmacyId: '',
     warehouseId: '',
   });
@@ -124,6 +140,29 @@ export default function UsersPage() {
   const needsWarehouse = Boolean(selectedRole && warehouseRoles.has(selectedRole.code));
   const selectedPharmacy = (pharmacies.data ?? []).find((item) => item.id === form.pharmacyId);
 
+  const editRole = (roles.data ?? []).find((item) => item.id === editForm.roleId);
+  const editNeedsPharmacy = Boolean(editRole && pharmacyRoles.has(editRole.code));
+  const editNeedsWarehouse = Boolean(editRole && warehouseRoles.has(editRole.code));
+  const isEditingSelf = Boolean(editing && user?.id === editing.id);
+  const isEditingSelfSuperAdmin =
+    isEditingSelf && (editing?.roles.includes('SUPER_ADMIN') || editing?.role === 'SUPER_ADMIN');
+
+  function openEdit(row: UserRow) {
+    const roleCode = row.role ?? row.roles[0] ?? '';
+    const matchedRole = (roles.data ?? []).find((item) => item.code === roleCode);
+    setInviteOpen(false);
+    setSelected(null);
+    setEditing(row);
+    setEditForm({
+      firstName: row.firstName,
+      lastName: row.lastName,
+      roleId: matchedRole?.id ?? '',
+      status: row.status,
+      pharmacyId: row.pharmacy?.id ?? row.pharmacyId ?? '',
+      warehouseId: row.warehouse?.id ?? row.warehouseId ?? '',
+    });
+  }
+
   const invite = useMutation({
     mutationFn: () => {
       if (!form.roleId) throw new Error(t('admin.users.selectRoleError'));
@@ -148,7 +187,7 @@ export default function UsersPage() {
     },
     onSuccess: (data) => {
       setInviteOpen(false);
-      setForm({ firstName: '', lastName: '', email: '', roleId: '', pharmacyId: '', warehouseId: '' });
+      setForm(emptyInviteForm());
       client.invalidateQueries({ queryKey: ['users'] });
       if (data.emailQueued) {
         toast.push(t('toasts.invitationCreatedResend', { email: data.email ?? 'recipient' }));
@@ -167,10 +206,80 @@ export default function UsersPage() {
     },
   });
 
+  const saveUser = useMutation({
+    mutationFn: () => {
+      if (!editing) throw new Error(t('admin.users.selectRoleError'));
+      if (!editForm.roleId) throw new Error(t('admin.users.selectRoleError'));
+      if (editNeedsPharmacy && !editForm.pharmacyId) {
+        throw new Error(t('admin.users.selectPharmacyError'));
+      }
+      if (editNeedsWarehouse && !editForm.warehouseId) {
+        throw new Error(t('admin.users.selectWarehouseError'));
+      }
+      if (isEditingSelfSuperAdmin) {
+        const nextRole = (roles.data ?? []).find((item) => item.id === editForm.roleId);
+        if (nextRole && nextRole.code !== 'SUPER_ADMIN') {
+          throw new Error(t('admin.users.cannotDemoteSelf'));
+        }
+      }
+      return apiRequest<UserRow>(`/users/${editing.id}`, {
+        method: 'PATCH',
+        body: {
+          firstName: editForm.firstName.trim(),
+          lastName: editForm.lastName.trim(),
+          roleId: editForm.roleId,
+          status: editForm.status,
+          pharmacyId: editNeedsPharmacy ? editForm.pharmacyId : undefined,
+          warehouseId: editNeedsWarehouse ? editForm.warehouseId : undefined,
+        },
+      });
+    },
+    onSuccess: (updated) => {
+      setEditing(null);
+      setSelected(updated);
+      client.invalidateQueries({ queryKey: ['users'] });
+      toast.push(t('admin.users.updated'));
+    },
+    onError: (error) => {
+      toast.push(error instanceof Error ? error.message : t('admin.users.updateFailed'), 'error');
+    },
+  });
+
   const deactivate = useMutation({
     mutationFn: (id: string) =>
       apiRequest(`/users/${id}/status`, { method: 'PATCH', body: { status: 'INACTIVE' } }),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['users'] }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['users'] });
+      toast.push(t('admin.users.deactivated'));
+    },
+    onError: (error) => {
+      toast.push(error instanceof Error ? error.message : t('admin.users.updateFailed'), 'error');
+    },
+  });
+
+  const reactivate = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest(`/users/${id}/status`, { method: 'PATCH', body: { status: 'ACTIVE' } }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['users'] });
+      toast.push(t('admin.users.reactivated'));
+    },
+    onError: (error) => {
+      toast.push(error instanceof Error ? error.message : t('admin.users.updateFailed'), 'error');
+    },
+  });
+
+  const removeUser = useMutation({
+    mutationFn: (id: string) => apiRequest(`/users/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      setSelected(null);
+      setEditing(null);
+      client.invalidateQueries({ queryKey: ['users'] });
+      toast.push(t('admin.users.deleted'));
+    },
+    onError: (error) => {
+      toast.push(error instanceof Error ? error.message : t('admin.users.deleteFailed'), 'error');
+    },
   });
 
   const resend = useMutation({
@@ -207,6 +316,17 @@ export default function UsersPage() {
     return row.pharmacy?.name ?? row.warehouse?.name ?? t('common.organizationLevel');
   }
 
+  function confirmDelete(row: UserRow) {
+    if (user?.id === row.id) {
+      toast.push(t('admin.users.cannotDeleteSelf'), 'error');
+      return;
+    }
+    if (!window.confirm(t('admin.users.deleteConfirm', { name: row.name }))) {
+      return;
+    }
+    removeUser.mutate(row.id);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -215,7 +335,13 @@ export default function UsersPage() {
           <p className="text-sm text-muted-foreground">{t('admin.users.subtitle')}</p>
         </div>
         {canInvite ? (
-          <Button className="bg-[#008DB5] hover:bg-[#006F91]" onClick={() => setInviteOpen(true)}>
+          <Button
+            className="bg-[#008DB5] hover:bg-[#006F91]"
+            onClick={() => {
+              setEditing(null);
+              setInviteOpen(true);
+            }}
+          >
             {t('actions.inviteEmployee')}
           </Button>
         ) : null}
@@ -228,13 +354,13 @@ export default function UsersPage() {
             <CardDescription>{t('admin.users.inviteDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
-      <form
+            <form
               className="grid gap-4 md:grid-cols-2"
               onSubmit={(event) => {
                 event.preventDefault();
-          invite.mutate();
-        }}
-      >
+                invite.mutate();
+              }}
+            >
               <div className="space-y-1.5">
                 <Label className="text-[#12304A]">{t('profile.firstName')}</Label>
                 <Input
@@ -359,6 +485,150 @@ export default function UsersPage() {
         </Card>
       ) : null}
 
+      {editing ? (
+        <Card className="border-[#B6E0EC] shadow-card">
+          <CardHeader className="border-b border-[#E7F7FB] bg-[#F0F9FC]">
+            <CardTitle className="text-[#12304A]">{t('admin.users.editTitle')}</CardTitle>
+            <CardDescription>
+              {t('admin.users.editDescription', { email: editing.email })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <form
+              className="grid gap-4 md:grid-cols-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveUser.mutate();
+              }}
+            >
+              <div className="space-y-1.5">
+                <Label className="text-[#12304A]">{t('profile.firstName')}</Label>
+                <Input
+                  className="h-11 rounded-xl border-[#B6E0EC] bg-[#F8FCFE]"
+                  value={editForm.firstName}
+                  onChange={(event) => setEditForm({ ...editForm, firstName: event.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[#12304A]">{t('profile.lastName')}</Label>
+                <Input
+                  className="h-11 rounded-xl border-[#B6E0EC] bg-[#F8FCFE]"
+                  value={editForm.lastName}
+                  onChange={(event) => setEditForm({ ...editForm, lastName: event.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[#12304A]">{t('table.role')}</Label>
+                <select
+                  className="h-11 w-full rounded-xl border border-[#B6E0EC] bg-[#F8FCFE] px-3 text-sm"
+                  value={editForm.roleId}
+                  onChange={(event) =>
+                    setEditForm({
+                      ...editForm,
+                      roleId: event.target.value,
+                      pharmacyId: '',
+                      warehouseId: '',
+                    })
+                  }
+                  required
+                  disabled={isEditingSelfSuperAdmin}
+                >
+                  <option value="">{t('common.selectRole')}</option>
+                  {(roles.data ?? []).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {t('admin.users.roleOption', { name: item.name, code: item.code })}
+                    </option>
+                  ))}
+                </select>
+                {isEditingSelfSuperAdmin ? (
+                  <p className="text-xs text-muted-foreground">{t('admin.users.keepSelfSuperAdminHint')}</p>
+                ) : null}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[#12304A]">{t('table.status')}</Label>
+                <select
+                  className="h-11 w-full rounded-xl border border-[#B6E0EC] bg-[#F8FCFE] px-3 text-sm"
+                  value={editForm.status}
+                  onChange={(event) => setEditForm({ ...editForm, status: event.target.value })}
+                  disabled={isEditingSelf}
+                >
+                  {['INVITED', 'ACTIVE', 'INACTIVE', 'SUSPENDED'].map((item) => (
+                    <option key={item} value={item}>
+                      {codeLabel(t, 'status', item)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {editNeedsWarehouse ? (
+                <div className="space-y-1.5">
+                  <Label className="text-[#12304A]">{t('profile.warehouse')}</Label>
+                  <select
+                    className="h-11 w-full rounded-xl border border-[#B6E0EC] bg-[#F8FCFE] px-3 text-sm"
+                    value={editForm.warehouseId}
+                    onChange={(event) => setEditForm({ ...editForm, warehouseId: event.target.value })}
+                    required
+                  >
+                    <option value="">{t('common.selectWarehouse')}</option>
+                    {(warehouses.data ?? []).map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {editNeedsPharmacy ? (
+                <div className="space-y-1.5">
+                  <Label className="text-[#12304A]">{t('profile.pharmacy')}</Label>
+                  <select
+                    className="h-11 w-full rounded-xl border border-[#B6E0EC] bg-[#F8FCFE] px-3 text-sm"
+                    value={editForm.pharmacyId}
+                    onChange={(event) => setEditForm({ ...editForm, pharmacyId: event.target.value })}
+                    required
+                  >
+                    <option value="">{t('common.selectPharmacy')}</option>
+                    {(pharmacies.data ?? []).map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({item.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {!editNeedsPharmacy && !editNeedsWarehouse && editRole ? (
+                <p className="text-sm text-muted-foreground md:col-span-2">{t('admin.users.orgLevelHint')}</p>
+              ) : null}
+
+              {saveUser.error ? (
+                <p className="text-sm text-destructive md:col-span-2">
+                  {saveUser.error instanceof ApiClientError
+                    ? saveUser.error.message
+                    : (saveUser.error as Error).message}
+                </p>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2 md:col-span-2">
+                <Button
+                  type="submit"
+                  className="bg-[#008DB5] hover:bg-[#006F91]"
+                  disabled={saveUser.isPending}
+                >
+                  {saveUser.isPending ? t('common.saving') : t('common.saveChanges')}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                  {t('common.cancel')}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="grid gap-2 md:grid-cols-6">
         <Input
           placeholder={t('common.search')}
@@ -431,45 +701,69 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className="border-t">
-                <td className="px-3 py-2">{row.name}</td>
-                <td className="px-3 py-2">{row.email}</td>
-                <td className="px-3 py-2">{formatRoles(row)}</td>
-                <td className="px-3 py-2">{formatAssignment(row)}</td>
-                <td className="px-3 py-2">
-                  <Badge>{codeLabel(t, 'status', row.status)}</Badge>
-                </td>
-                <td className="px-3 py-2">
-                  {row.invitation?.status ? codeLabel(t, 'status', row.invitation.status) : t('common.emDash')}
-                </td>
-                <td className="px-3 py-2">
-                  {row.lastLoginAt ? String(row.lastLoginAt).slice(0, 16) : t('common.emDash')}
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    <Button size="sm" variant="outline" onClick={() => setSelected(row)}>
-                      {t('actions.view')}
-                    </Button>
-                    {canUpdate && row.status === 'ACTIVE' ? (
-                      <Button size="sm" variant="outline" onClick={() => deactivate.mutate(row.id)}>
-                        {t('actions.deactivate')}
+            {rows.map((row) => {
+              const isSelf = user?.id === row.id;
+              return (
+                <tr key={row.id} className="border-t">
+                  <td className="px-3 py-2">{row.name}</td>
+                  <td className="px-3 py-2">{row.email}</td>
+                  <td className="px-3 py-2">{formatRoles(row)}</td>
+                  <td className="px-3 py-2">{formatAssignment(row)}</td>
+                  <td className="px-3 py-2">
+                    <Badge>{codeLabel(t, 'status', row.status)}</Badge>
+                  </td>
+                  <td className="px-3 py-2">
+                    {row.invitation?.status ? codeLabel(t, 'status', row.invitation.status) : t('common.emDash')}
+                  </td>
+                  <td className="px-3 py-2">
+                    {row.lastLoginAt ? String(row.lastLoginAt).slice(0, 16) : t('common.emDash')}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      <Button size="sm" variant="outline" onClick={() => setSelected(row)}>
+                        {t('actions.view')}
                       </Button>
-                    ) : null}
-                    {canInvite && row.invitation?.status === 'PENDING' ? (
-                      <>
-                        <Button size="sm" variant="outline" onClick={() => resend.mutate(row.invitation!.id)}>
-                          {t('actions.resendInvitation')}
+                      {canUpdate ? (
+                        <Button size="sm" variant="outline" onClick={() => openEdit(row)}>
+                          {t('actions.edit')}
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => revoke.mutate(row.invitation!.id)}>
-                          {t('actions.revokeInvitation')}
+                      ) : null}
+                      {canUpdate && row.status === 'ACTIVE' && !isSelf ? (
+                        <Button size="sm" variant="outline" onClick={() => deactivate.mutate(row.id)}>
+                          {t('actions.deactivate')}
                         </Button>
-                      </>
-                    ) : null}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      ) : null}
+                      {canUpdate && (row.status === 'INACTIVE' || row.status === 'SUSPENDED') ? (
+                        <Button size="sm" variant="outline" onClick={() => reactivate.mutate(row.id)}>
+                          {t('actions.activate')}
+                        </Button>
+                      ) : null}
+                      {canDelete && !isSelf ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive"
+                          onClick={() => confirmDelete(row)}
+                          disabled={removeUser.isPending}
+                        >
+                          {t('common.delete')}
+                        </Button>
+                      ) : null}
+                      {canInvite && row.invitation?.status === 'PENDING' ? (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => resend.mutate(row.invitation!.id)}>
+                            {t('actions.resendInvitation')}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => revoke.mutate(row.invitation!.id)}>
+                            {t('actions.revokeInvitation')}
+                          </Button>
+                        </>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {rows.length === 0 && !users.isLoading ? (
@@ -510,9 +804,26 @@ export default function UsersPage() {
                 </a>
               </p>
             ) : null}
-            <Button size="sm" variant="outline" onClick={() => setSelected(null)}>
-              {t('common.close')}
-            </Button>
+            <div className="flex flex-wrap gap-2 pt-3">
+              {canUpdate ? (
+                <Button size="sm" className="bg-[#008DB5] hover:bg-[#006F91]" onClick={() => openEdit(selected)}>
+                  {t('actions.edit')}
+                </Button>
+              ) : null}
+              {canDelete && user?.id !== selected.id ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive"
+                  onClick={() => confirmDelete(selected)}
+                >
+                  {t('common.delete')}
+                </Button>
+              ) : null}
+              <Button size="sm" variant="outline" onClick={() => setSelected(null)}>
+                {t('common.close')}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : null}

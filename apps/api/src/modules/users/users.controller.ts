@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -219,23 +219,76 @@ export class UsersController {
 
   @Patch(':id')
   @RequirePermissions(PERMISSIONS.USERS_UPDATE)
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentUser() user: RequestUser) {
-    return this.usersService.update(id, dto, user);
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    const updated = await this.usersService.update(id, dto, user);
+    await this.audit.record({
+      userId: user.id,
+      action: AuditAction.USER_UPDATED,
+      entityType: 'User',
+      entityId: id,
+      newValues: {
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        status: updated.status,
+        role: updated.role,
+        pharmacyId: updated.pharmacyId,
+        warehouseId: updated.warehouseId,
+      },
+    });
+    return updated;
   }
 
   @Patch(':id/status')
   @RequirePermissions(PERMISSIONS.USERS_UPDATE)
-  updateStatus(
+  async updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateUserStatusDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.usersService.updateStatus(id, dto.status, user);
+    const updated = await this.usersService.updateStatus(id, dto.status, user);
+    await this.audit.record({
+      userId: user.id,
+      action: AuditAction.USER_UPDATED,
+      entityType: 'User',
+      entityId: id,
+      newValues: { status: updated.status },
+    });
+    return updated;
   }
 
   @Post(':id/deactivate')
   @RequirePermissions(PERMISSIONS.USERS_UPDATE)
-  deactivate(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    return this.usersService.deactivate(id, user);
+  async deactivate(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    const updated = await this.usersService.deactivate(id, user);
+    await this.audit.record({
+      userId: user.id,
+      action: AuditAction.USER_UPDATED,
+      entityType: 'User',
+      entityId: id,
+      newValues: { status: updated.status },
+    });
+    return updated;
+  }
+
+  @Delete(':id')
+  @RequirePermissions(PERMISSIONS.USERS_DELETE)
+  async remove(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    const deleted = await this.usersService.softDelete(id, user);
+    await this.audit.record({
+      userId: user.id,
+      action: AuditAction.USER_DELETED,
+      entityType: 'User',
+      entityId: id,
+      newValues: {
+        email: deleted.email,
+        status: deleted.status,
+        role: deleted.role,
+      },
+    });
+    return deleted;
   }
 }

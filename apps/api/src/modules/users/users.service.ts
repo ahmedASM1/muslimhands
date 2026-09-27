@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   homePathForRoles,
   RoleCode,
@@ -257,6 +262,17 @@ export class UsersService {
     }
     this.assertCanManageUser(actor, existing.pharmacyId);
 
+    const currentRoles = existing.userRoles.map((assignment) => assignment.role.code as RoleCode);
+    const isTargetSuperAdmin = currentRoles.includes(RoleCode.SUPER_ADMIN);
+
+    if (
+      data.status &&
+      data.status !== UserStatus.ACTIVE &&
+      data.status !== existing.status
+    ) {
+      await this.assertCanDisableSuperAdmin(actor, id, isTargetSuperAdmin);
+    }
+
     let assignment = {
       pharmacyId: data.pharmacyId === undefined ? existing.pharmacyId : data.pharmacyId,
       warehouseId: data.warehouseId === undefined ? existing.warehouseId : data.warehouseId,
@@ -267,10 +283,13 @@ export class UsersService {
         throw new NotFoundException('Role not found');
       }
       this.assertCanAssignRole(actor, role.code as RoleCode);
+      await this.assertCanChangeRole(actor, id, currentRoles, role.code as RoleCode);
+      // Role changes recompute assignment from the payload (not previous location),
+      // so org-level roles clear pharmacy/warehouse links.
       assignment = assignmentForRole(
         role.code as RoleCode,
-        this.forcedPharmacyId(actor, assignment.pharmacyId),
-        assignment.warehouseId,
+        this.forcedPharmacyId(actor, data.pharmacyId ?? null),
+        data.warehouseId ?? null,
       );
       await this.prisma.userRole.deleteMany({ where: { userId: id } });
       await this.prisma.userRole.create({ data: { userId: id, roleId: data.roleId } });
@@ -311,6 +330,47 @@ export class UsersService {
 
   async deactivate(id: string, actor: AuthenticatedUser) {
     return this.updateStatus(id, UserStatus.INACTIVE, actor);
+  }
+
+  async softDelete(id: string, actor: AuthenticatedUser) {
+    const existing = await this.prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      include: { userRoles: { include: { role: true } } },
+    });
+    if (!existing) {
+      throw new NotFoundException('User not found');
+    }
+    this.assertCanManageUser(actor, existing.pharmacyId);
+
+    if (actor.id === id) {
+      throw new ForbiddenException('You cannot delete your own account');
+    }
+
+    const isTargetSuperAdmin = existing.userRoles.some(
+      (assignment) => assignment.role.code === RoleCode.SUPER_ADMIN,
+    );
+    await this.assertCanDisableSuperAdmin(actor, id, isTargetSuperAdmin);
+
+    const deletedAt = new Date();
+    // Free the unique email so the same address can be re-invited later.
+    const freedEmail = `${existing.email}.deleted.${deletedAt.getTime()}`;
+
+    await this.revokeSessions(id);
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: {
+        deletedAt,
+        status: UserStatus.INACTIVE,
+        email: freedEmail,
+      },
+      include: {
+        userRoles: { include: { role: true } },
+        pharmacy: true,
+        warehouse: true,
+      },
+    });
+
+    return this.toPublicUser(user);
   }
 
   toAuthenticatedUser(user: UserWithAccess): AuthenticatedUser {
@@ -565,5 +625,56 @@ export class UsersService {
     if (roleCode !== RoleCode.PHARMACY_MANAGER && roleCode !== RoleCode.PHARMACY_STAFF) {
       throw new ForbiddenException('Cannot assign this role');
     }
+  }
+
+  private async assertCanChangeRole(
+    actor: AuthenticatedUser,
+    targetUserId: string,
+    currentRoles: RoleCode[],
+    nextRole: RoleCode,
+  ) {
+    const currentlySuperAdmin = currentRoles.includes(RoleCode.SUPER_ADMIN);
+    if (!currentlySuperAdmin || nextRole === RoleCode.SUPER_ADMIN) {
+      return;
+    }
+
+    if (actor.id === targetUserId) {
+      throw new ForbiddenException(
+        'You cannot remove your own Super Admin role. Ask another Super Admin to change it.',
+      );
+    }
+
+    const remainingAdmins = await this.countActiveSuperAdmins(targetUserId);
+    if (remainingAdmins === 0) {
+      throw new BadRequestException('Cannot demote the last active Super Admin');
+    }
+  }
+
+  private async assertCanDisableSuperAdmin(
+    actor: AuthenticatedUser,
+    targetUserId: string,
+    isTargetSuperAdmin: boolean,
+  ) {
+    if (actor.id === targetUserId) {
+      throw new ForbiddenException('You cannot deactivate or delete your own account');
+    }
+    if (!isTargetSuperAdmin) {
+      return;
+    }
+    const remainingAdmins = await this.countActiveSuperAdmins(targetUserId);
+    if (remainingAdmins === 0) {
+      throw new BadRequestException('Cannot deactivate or delete the last active Super Admin');
+    }
+  }
+
+  private countActiveSuperAdmins(excludeUserId?: string) {
+    return this.prisma.user.count({
+      where: {
+        deletedAt: null,
+        status: UserStatus.ACTIVE,
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+        userRoles: { some: { role: { code: RoleCode.SUPER_ADMIN } } },
+      },
+    });
   }
 }
