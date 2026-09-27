@@ -178,6 +178,7 @@ async function seedAdmin() {
       status: 'ACTIVE',
       deletedAt: null,
       organizationId: organization.id,
+      passwordHash,
     },
     create: {
       email: email.toLowerCase(),
