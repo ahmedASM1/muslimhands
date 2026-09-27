@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+ï»¿import { ForbiddenException, Injectable } from '@nestjs/common';
 import { AuditAction, type AuthenticatedUser } from '@mh/shared';
 import {
   LocationType,
@@ -578,7 +578,7 @@ export class ReportsService {
       status: row.status,
       requestedQuantities: row.items.map((i) => `${i.medicine.name}:${i.requestedQty}`).join('; '),
       approvedQuantities: row.items
-        .map((i) => `${i.medicine.name}:${i.approvedQty ?? '—'}`)
+        .map((i) => `${i.medicine.name}:${i.approvedQty ?? 'Â—'}`)
         .join('; '),
       requestedBy: `${row.createdBy.firstName} ${row.createdBy.lastName}`.trim(),
       reviewedBy: row.reviewedBy
@@ -670,9 +670,9 @@ export class ReportsService {
           : null,
         custodyNote:
           row.status === TransferStatus.SHIPPED || row.status === TransferStatus.IN_TRANSIT
-            ? 'SHIPPED — not yet pharmacy stock'
+            ? 'SHIPPED Â— not yet pharmacy stock'
             : row.status === TransferStatus.RECEIVED
-              ? 'RECEIVED — pharmacy stock'
+              ? 'RECEIVED Â— pharmacy stock'
               : row.status,
       })),
     );
@@ -863,10 +863,17 @@ export class ReportsService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const pharmacyId = scopedPharmacyId(user, query.pharmacyId);
+    const period = (query.period ?? '').toUpperCase();
     const range =
-      query.dateFrom || query.dateTo
-        ? parseInclusiveDateRange({ dateFrom: query.dateFrom, dateTo: query.dateTo })
-        : null;
+      period === 'ALL' && !query.dateFrom && !query.dateTo
+        ? null
+        : query.dateFrom || query.dateTo || (period && period !== 'ALL')
+          ? parseInclusiveDateRange({
+              period: query.period,
+              dateFrom: query.dateFrom,
+              dateTo: query.dateTo,
+            })
+          : null;
 
     const where: Prisma.BeneficiaryWhereInput = {
       deletedAt: null,

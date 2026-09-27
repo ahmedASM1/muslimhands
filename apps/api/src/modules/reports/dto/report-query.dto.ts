@@ -141,6 +141,11 @@ export class BeneficiaryReportQueryDto extends PaginationQueryDto {
   @IsString()
   status?: string;
 
+  @ApiPropertyOptional({ enum: ['ALL', 'TODAY', 'CURRENT', '7D', '30D', 'CUSTOM'] })
+  @IsOptional()
+  @IsString()
+  period?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
