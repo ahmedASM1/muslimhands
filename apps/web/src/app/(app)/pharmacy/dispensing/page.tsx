@@ -1,8 +1,9 @@
 ﻿'use client';
 
 import Link from 'next/link';
+import { Plus, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiList, apiRequest } from '@/lib/api';
@@ -57,6 +58,30 @@ interface DispenseResult {
   }>;
 }
 
+interface CategoryAdder {
+  id: string;
+  catalogType: CatalogMode;
+  search: string;
+  medicineId: string;
+  quantity: string;
+}
+
+function newAdderId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `adder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createAdder(catalogType: CatalogMode = CATALOG_ITEM_TYPE.MEDICINE): CategoryAdder {
+  return {
+    id: newAdderId(),
+    catalogType,
+    search: '',
+    medicineId: '',
+    quantity: '1',
+  };
+}
+
 export default function DispensingPage() {
   const { t } = useI18n();
   const dash = t('common.emDash');
@@ -66,22 +91,13 @@ export default function DispensingPage() {
   const canRequestStock =
     hasPermission(user, 'supply-requests:create') || hasPermission(user, 'supply-request:create');
 
-  const [catalogType, setCatalogType] = useState<CatalogMode | ''>('');
   const [beneficiarySearch, setBeneficiarySearch] = useState('');
   const [selectedBeneficiary, setSelectedBeneficiary] = useState<Beneficiary | null>(null);
-  const [medicineSearch, setMedicineSearch] = useState('');
-  const [medicineId, setMedicineId] = useState('');
-  const [quantity, setQuantity] = useState('1');
+  const [adders, setAdders] = useState<CategoryAdder[]>([createAdder(CATALOG_ITEM_TYPE.MEDICINE)]);
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<LineItem[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<DispenseResult | null>(null);
-
-  useEffect(() => {
-    // Switching type only changes the picker catalog — keep cart lines for mixed dispense.
-    setMedicineId('');
-    setMedicineSearch('');
-  }, [catalogType]);
 
   const beneficiaries = useQuery({
     queryKey: ['beneficiaries-search', beneficiarySearch],
@@ -91,18 +107,24 @@ export default function DispensingPage() {
       ),
   });
 
-  const medicines = useQuery({
-    queryKey: ['medicines-disp', catalogType],
-    enabled: Boolean(catalogType),
+  const medicineCatalog = useQuery({
+    queryKey: ['medicines-disp', CATALOG_ITEM_TYPE.MEDICINE],
     queryFn: () =>
       apiList<Medicine>(
-        `/medicines?limit=100&isActive=true&itemType=${encodeURIComponent(catalogType)}`,
+        `/medicines?limit=100&isActive=true&itemType=${encodeURIComponent(CATALOG_ITEM_TYPE.MEDICINE)}`,
+      ),
+  });
+
+  const supplyCatalog = useQuery({
+    queryKey: ['medicines-disp', CATALOG_ITEM_TYPE.MEDICAL_SUPPLY],
+    queryFn: () =>
+      apiList<Medicine>(
+        `/medicines?limit=100&isActive=true&itemType=${encodeURIComponent(CATALOG_ITEM_TYPE.MEDICAL_SUPPLY)}`,
       ),
   });
 
   const stock = useQuery({
     queryKey: ['pharmacy-stock-disp'],
-    // API PaginationQueryDto max limit is 100 — higher values 400 and look like avail 0.
     queryFn: () => apiList<StockRow>('/pharmacy-stock?limit=100'),
   });
 
@@ -136,7 +158,6 @@ export default function DispensingPage() {
     return expired;
   }, [stock.data, todayStart]);
 
-  /** Live available qty from API — prefer over stale snapshot on the line. */
   const linesWithLiveAvailability = useMemo(
     () =>
       lines.map((line) => ({
@@ -149,16 +170,17 @@ export default function DispensingPage() {
 
   const hasInsufficientStock = linesWithLiveAvailability.some((line) => line.insufficient);
 
-  const filteredMedicines = useMemo(() => {
-    const q = medicineSearch.trim().toLowerCase();
-    return (medicines.data?.items ?? []).filter((item) =>
+  const catalogFor = (type: CatalogMode) =>
+    type === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
+      ? (supplyCatalog.data?.items ?? [])
+      : (medicineCatalog.data?.items ?? []);
+
+  const filteredFor = (adder: CategoryAdder) => {
+    const q = adder.search.trim().toLowerCase();
+    return catalogFor(adder.catalogType).filter((item) =>
       !q ? true : item.name.toLowerCase().includes(q),
     );
-  }, [medicines.data, medicineSearch]);
-
-  const selectedMedicine = filteredMedicines.find((item) => item.id === medicineId);
-  const available = medicineId ? (availableByMedicine.get(medicineId) ?? 0) : 0;
-  const isSupplies = catalogType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
+  };
 
   const dispense = useMutation({
     mutationFn: async () => {
@@ -184,6 +206,7 @@ export default function DispensingPage() {
       setConfirmOpen(false);
       setLines([]);
       setNotes('');
+      setAdders([createAdder(CATALOG_ITEM_TYPE.MEDICINE)]);
       push(t('toasts.dispensingCompleted'), 'success');
       client.invalidateQueries({ queryKey: ['pharmacy-stock'] });
       client.invalidateQueries({ queryKey: ['pharmacy-stock-disp'] });
@@ -195,39 +218,46 @@ export default function DispensingPage() {
     },
   });
 
-  function addLine() {
-    if (!selectedMedicine || Number(quantity) < 1) return;
-    const liveAvail = availableByMedicine.get(selectedMedicine.id) ?? 0;
+  function updateAdder(id: string, patch: Partial<CategoryAdder>) {
+    setAdders((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  }
+
+  function addLineFrom(adder: CategoryAdder) {
+    const items = filteredFor(adder);
+    const selected = items.find((item) => item.id === adder.medicineId);
+    if (!selected || Number(adder.quantity) < 1) return;
+    const liveAvail = availableByMedicine.get(selected.id) ?? 0;
     if (liveAvail <= 0) return;
-    const qty = Number(quantity);
+    const qty = Number(adder.quantity);
     setLines((prev) => {
-      const existing = prev.find((row) => row.medicineId === selectedMedicine.id);
+      const existing = prev.find((row) => row.medicineId === selected.id);
       if (existing) {
         return prev.map((row) =>
-          row.medicineId === selectedMedicine.id
-            ? { ...row, quantity: row.quantity + qty }
-            : row,
+          row.medicineId === selected.id ? { ...row, quantity: row.quantity + qty } : row,
         );
       }
-      const unit =
-        selectedMedicine.referenceValue != null
-          ? Number(selectedMedicine.referenceValue)
-          : null;
+      const unit = selected.referenceValue != null ? Number(selected.referenceValue) : null;
       return [
         ...prev,
         {
-          medicineId: selectedMedicine.id,
-          medicineName: selectedMedicine.name,
-          itemType: catalogType as CatalogMode,
+          medicineId: selected.id,
+          medicineName: selected.name,
+          itemType: adder.catalogType,
           quantity: qty,
           available: liveAvail,
           estimatedUnitValue: Number.isFinite(unit as number) ? unit : null,
         },
       ];
     });
-    setMedicineId('');
-    setQuantity('1');
-    setMedicineSearch('');
+    updateAdder(adder.id, { medicineId: '', search: '', quantity: '1' });
+  }
+
+  function addCategoryRow() {
+    const hasSupply = adders.some((row) => row.catalogType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY);
+    setAdders((prev) => [
+      ...prev,
+      createAdder(hasSupply ? CATALOG_ITEM_TYPE.MEDICINE : CATALOG_ITEM_TYPE.MEDICAL_SUPPLY),
+    ]);
   }
 
   const insufficientMedicineIds = linesWithLiveAvailability
@@ -253,42 +283,6 @@ export default function DispensingPage() {
       </div>
 
       <section className="space-y-3 rounded-lg border p-4">
-        <h2 className="font-medium">{t('dispensing.dispenseType')}</h2>
-        <p className="text-sm text-muted-foreground">{t('dispensing.dispenseTypeHint')}</p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            className={`rounded-lg border px-4 py-3 text-start text-sm transition-colors ${
-              catalogType === CATALOG_ITEM_TYPE.MEDICINE
-                ? 'border-primary bg-primary/10 font-medium'
-                : 'hover:bg-muted/50'
-            }`}
-            onClick={() => setCatalogType(CATALOG_ITEM_TYPE.MEDICINE)}
-          >
-            <div className="font-medium">{t('catalogTypes.MEDICINE')}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{t('dispensing.typeMedicineHint')}</div>
-          </button>
-          <button
-            type="button"
-            className={`rounded-lg border px-4 py-3 text-start text-sm transition-colors ${
-              catalogType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
-                ? 'border-primary bg-primary/10 font-medium'
-                : 'hover:bg-muted/50'
-            }`}
-            onClick={() => setCatalogType(CATALOG_ITEM_TYPE.MEDICAL_SUPPLY)}
-          >
-            <div className="font-medium">{t('catalogTypes.MEDICAL_SUPPLY')}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{t('dispensing.typeSupplyHint')}</div>
-          </button>
-        </div>
-        {lines.length > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {t('dispensing.mixedCartHint', { count: lines.length })}
-          </p>
-        ) : null}
-      </section>
-
-      <section className="space-y-3 rounded-lg border p-4">
         <h2 className="font-medium">{t('dispensing.beneficiary')}</h2>
         {selectedBeneficiary ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm">
@@ -297,8 +291,17 @@ export default function DispensingPage() {
                 {selectedBeneficiary.fullName ?? selectedBeneficiary.name}
               </div>
               <div className="text-muted-foreground">
-                {selectedBeneficiary.beneficiaryNumber}
-                {selectedBeneficiary.phone ? ` · ${selectedBeneficiary.phone}` : ''}
+                <span dir="ltr" className="dir-ltr inline-block">
+                  {selectedBeneficiary.beneficiaryNumber}
+                </span>
+                {selectedBeneficiary.phone ? (
+                  <>
+                    {' · '}
+                    <span dir="ltr" className="dir-ltr inline-block">
+                      {selectedBeneficiary.phone}
+                    </span>
+                  </>
+                ) : null}
               </div>
             </div>
             <Button type="button" variant="ghost" onClick={() => setSelectedBeneficiary(null)}>
@@ -317,11 +320,13 @@ export default function DispensingPage() {
                 <button
                   key={item.id}
                   type="button"
-                  className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                  className="flex w-full items-center justify-between rounded-md px-3 py-2 text-start text-sm hover:bg-muted"
                   onClick={() => setSelectedBeneficiary(item)}
                 >
                   <span>{item.fullName ?? item.name}</span>
-                  <span className="text-muted-foreground">{item.beneficiaryNumber}</span>
+                  <span className="dir-ltr text-muted-foreground" dir="ltr">
+                    {item.beneficiaryNumber}
+                  </span>
                 </button>
               ))}
             </div>
@@ -332,183 +337,230 @@ export default function DispensingPage() {
         )}
       </section>
 
-      <section className="space-y-3 rounded-lg border p-4">
-        <h2 className="font-medium">
-          {catalogType
-            ? t(isSupplies ? 'dispensing.addSupplies' : 'dispensing.addMedicines')
-            : t('dispensing.items')}
-        </h2>
-        {!catalogType ? (
-          <p className="text-sm text-muted-foreground">{t('dispensing.selectTypeFirst')}</p>
-        ) : (
-          <>
-            {stock.isError ? (
-              <p className="text-sm text-destructive">{t('dispensing.stockLoadError')}</p>
-            ) : null}
-            <div className="grid gap-3 md:grid-cols-3">
-              <Input
-                placeholder={t(isSupplies ? 'dispensing.searchSupply' : 'dispensing.searchMedicine')}
-                value={medicineSearch}
-                onChange={(e) => setMedicineSearch(e.target.value)}
-              />
-              <select
-                className="h-10 rounded-md border px-3 text-sm"
-                value={medicineId}
-                onChange={(e) => setMedicineId(e.target.value)}
-              >
-                <option value="">
-                  {t(isSupplies ? 'dispensing.selectSupply' : 'dispensing.selectMedicine')}
-                </option>
-                {filteredMedicines.map((item) => {
-                  const avail = availableByMedicine.get(item.id) ?? 0;
-                  const expiredOnly = expiredOnlyMedicineIds.has(item.id);
-                  const disabled = avail <= 0;
-                  const label = expiredOnly
-                    ? t('dispensing.medicineExpiredOnly', { name: item.name })
-                    : t('dispensing.medicineAvail', { name: item.name, avail });
-                  return (
-                    <option key={item.id} value={item.id} disabled={disabled}>
-                      {label}
+      <section className="space-y-4 rounded-lg border p-4">
+        <div>
+          <h2 className="font-medium">{t('dispensing.items')}</h2>
+          <p className="text-sm text-muted-foreground">{t('dispensing.itemsHint')}</p>
+        </div>
+
+        {stock.isError ? (
+          <p className="text-sm text-destructive">{t('dispensing.stockLoadError')}</p>
+        ) : null}
+
+        <div className="space-y-3">
+          {adders.map((adder) => {
+            const isSupplies = adder.catalogType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
+            const options = filteredFor(adder);
+            const selected = options.find((item) => item.id === adder.medicineId);
+            const avail = adder.medicineId ? (availableByMedicine.get(adder.medicineId) ?? 0) : 0;
+            return (
+              <div key={adder.id} className="space-y-2 rounded-md border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-sm font-medium">{t('dispensing.category')}</label>
+                  {adders.length > 1 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setAdders((prev) => prev.filter((row) => row.id !== adder.id))}
+                    >
+                      <Trash2 className="me-1 h-4 w-4" />
+                      {t('dispensing.removeCategoryRow')}
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.4fr)_auto]">
+                  <select
+                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                    value={adder.catalogType}
+                    onChange={(e) =>
+                      updateAdder(adder.id, {
+                        catalogType: e.target.value as CatalogMode,
+                        medicineId: '',
+                        search: '',
+                      })
+                    }
+                  >
+                    <option value={CATALOG_ITEM_TYPE.MEDICINE}>
+                      {t('catalogTypes.MEDICINE')}
                     </option>
-                  );
-                })}
-              </select>
-              <div className="flex gap-2">
-                <Input
-                  type="number"
-                  min={1}
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                />
-                <Button
-                  type="button"
-                  onClick={addLine}
-                  disabled={!medicineId || (availableByMedicine.get(medicineId) ?? 0) <= 0}
-                >
-                  {t('actions.add')}
-                </Button>
-              </div>
-            </div>
-            {medicineId ? (
-              <p className="text-sm text-muted-foreground">
-                {t('dispensing.availableNonExpired', { avail: available })}
-                {selectedMedicine?.referenceValue != null
-                  ? t('dispensing.estimatedUnitValue', { value: selectedMedicine.referenceValue })
-                  : ''}
-              </p>
-            ) : null}
-
-            {linesWithLiveAvailability.length > 0 ? (
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/40">
-                    <tr>
-                      <th className="px-3 py-2 text-start">{t('table.type')}</th>
-                      <th className="px-3 py-2 text-start">{t('dispensing.item')}</th>
-                      <th className="px-3 py-2 text-start">{t('dispensing.requested')}</th>
-                      <th className="px-3 py-2 text-start">{t('dispensing.available')}</th>
-                      <th className="px-3 py-2 text-start">{t('dispensing.estUnitValue')}</th>
-                      <th className="px-3 py-2 text-start">{t('dispensing.estTotalValue')}</th>
-                      <th className="px-3 py-2 text-start" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {linesWithLiveAvailability.map((line) => (
-                      <tr key={line.medicineId} className="border-t">
-                        <td className="px-3 py-2 text-start text-xs text-muted-foreground">
-                          {t(
-                            line.itemType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
-                              ? 'catalogTypes.MEDICAL_SUPPLY'
-                              : 'catalogTypes.MEDICINE',
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-start">
-                          <div>{line.medicineName}</div>
-                          {line.insufficient ? (
-                            <div className="mt-0.5 text-xs text-destructive">
-                              {t('dispensing.insufficientStock')}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-2 text-start">{line.quantity}</td>
-                        <td
-                          className={`px-3 py-2 text-start ${line.insufficient ? 'text-destructive' : ''}`}
-                        >
-                          {line.available}
-                        </td>
-                        <td className="px-3 py-2 text-start">
-                          {line.estimatedUnitValue != null ? line.estimatedUnitValue : dash}
-                        </td>
-                        <td className="px-3 py-2 text-start">
-                          {line.estimatedUnitValue != null
-                            ? (line.estimatedUnitValue * line.quantity).toFixed(2)
-                            : dash}
-                        </td>
-                        <td className="px-3 py-2 text-start">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              setLines((prev) =>
-                                prev.filter((row) => row.medicineId !== line.medicineId),
-                              )
-                            }
-                          >
-                            {t('actions.remove')}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">{t('dispensing.noItemsSelected')}</p>
-            )}
-
-            {hasInsufficientStock ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                <p>{t('dispensing.insufficientBanner')}</p>
-                {canRequestStock ? (
-                  <p className="mt-1">
-                    <Link href={requestStockHref} className="font-medium underline underline-offset-2">
-                      {t('dispensing.requestFromWarehouse')}
-                    </Link>
+                    <option value={CATALOG_ITEM_TYPE.MEDICAL_SUPPLY}>
+                      {t('catalogTypes.MEDICAL_SUPPLY')}
+                    </option>
+                  </select>
+                  <Input
+                    placeholder={t(
+                      isSupplies ? 'dispensing.searchSupply' : 'dispensing.searchMedicine',
+                    )}
+                    value={adder.search}
+                    onChange={(e) => updateAdder(adder.id, { search: e.target.value })}
+                  />
+                  <select
+                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                    value={adder.medicineId}
+                    onChange={(e) => updateAdder(adder.id, { medicineId: e.target.value })}
+                  >
+                    <option value="">
+                      {t(isSupplies ? 'dispensing.selectSupply' : 'dispensing.selectMedicine')}
+                    </option>
+                    {options.map((item) => {
+                      const itemAvail = availableByMedicine.get(item.id) ?? 0;
+                      const expiredOnly = expiredOnlyMedicineIds.has(item.id);
+                      const disabled = itemAvail <= 0;
+                      const label = expiredOnly
+                        ? t('dispensing.medicineExpiredOnly', { name: item.name })
+                        : t('dispensing.medicineAvail', { name: item.name, avail: itemAvail });
+                      return (
+                        <option key={item.id} value={item.id} disabled={disabled}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      className="w-20"
+                      value={adder.quantity}
+                      onChange={(e) => updateAdder(adder.id, { quantity: e.target.value })}
+                    />
+                    <Button
+                      type="button"
+                      onClick={() => addLineFrom(adder)}
+                      disabled={!adder.medicineId || avail <= 0}
+                    >
+                      {t('actions.add')}
+                    </Button>
+                  </div>
+                </div>
+                {adder.medicineId ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t('dispensing.availableNonExpired', { avail })}
+                    {selected?.referenceValue != null
+                      ? t('dispensing.estimatedUnitValue', { value: selected.referenceValue })
+                      : ''}
                   </p>
-                ) : (
-                  <p className="mt-1 text-muted-foreground">{t('dispensing.askManagerSupply')}</p>
-                )}
-              </div>
-            ) : null}
-
-            <Input
-              placeholder={t('dispensing.optionalNotes')}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-muted-foreground">
-                {t('dispensing.totalQuantity', { qty: totalQty })}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {hasInsufficientStock && canRequestStock ? (
-                  <Button asChild variant="outline">
-                    <Link href={requestStockHref}>{t('actions.requestStock')}</Link>
-                  </Button>
                 ) : null}
-                <Button
-                  type="button"
-                  disabled={!selectedBeneficiary || lines.length === 0 || hasInsufficientStock}
-                  onClick={() => setConfirmOpen(true)}
-                >
-                  {t('actions.reviewConfirm')}
-                </Button>
               </div>
-            </div>
-          </>
+            );
+          })}
+        </div>
+
+        <Button type="button" variant="outline" onClick={addCategoryRow}>
+          <Plus className="me-1 h-4 w-4" />
+          {t('dispensing.addCategoryRow')}
+        </Button>
+
+        {linesWithLiveAvailability.length > 0 ? (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40">
+                <tr>
+                  <th className="px-3 py-2 text-start">{t('table.type')}</th>
+                  <th className="px-3 py-2 text-start">{t('dispensing.item')}</th>
+                  <th className="px-3 py-2 text-start">{t('dispensing.requested')}</th>
+                  <th className="px-3 py-2 text-start">{t('dispensing.available')}</th>
+                  <th className="px-3 py-2 text-start">{t('dispensing.estUnitValue')}</th>
+                  <th className="px-3 py-2 text-start">{t('dispensing.estTotalValue')}</th>
+                  <th className="px-3 py-2 text-start" />
+                </tr>
+              </thead>
+              <tbody>
+                {linesWithLiveAvailability.map((line) => (
+                  <tr key={line.medicineId} className="border-t">
+                    <td className="px-3 py-2 text-start text-xs text-muted-foreground">
+                      {t(
+                        line.itemType === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY
+                          ? 'catalogTypes.MEDICAL_SUPPLY'
+                          : 'catalogTypes.MEDICINE',
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-start">
+                      <div>{line.medicineName}</div>
+                      {line.insufficient ? (
+                        <div className="mt-0.5 text-xs text-destructive">
+                          {t('dispensing.insufficientStock')}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-start">{line.quantity}</td>
+                    <td
+                      className={`px-3 py-2 text-start ${line.insufficient ? 'text-destructive' : ''}`}
+                    >
+                      {line.available}
+                    </td>
+                    <td className="px-3 py-2 text-start">
+                      {line.estimatedUnitValue != null ? line.estimatedUnitValue : dash}
+                    </td>
+                    <td className="px-3 py-2 text-start">
+                      {line.estimatedUnitValue != null
+                        ? (line.estimatedUnitValue * line.quantity).toFixed(2)
+                        : dash}
+                    </td>
+                    <td className="px-3 py-2 text-start">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setLines((prev) =>
+                            prev.filter((row) => row.medicineId !== line.medicineId),
+                          )
+                        }
+                      >
+                        {t('actions.remove')}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t('dispensing.noItemsSelected')}</p>
         )}
+
+        {hasInsufficientStock ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <p>{t('dispensing.insufficientBanner')}</p>
+            {canRequestStock ? (
+              <p className="mt-1">
+                <Link href={requestStockHref} className="font-medium underline underline-offset-2">
+                  {t('dispensing.requestFromWarehouse')}
+                </Link>
+              </p>
+            ) : (
+              <p className="mt-1 text-muted-foreground">{t('dispensing.askManagerSupply')}</p>
+            )}
+          </div>
+        ) : null}
+
+        <Input
+          placeholder={t('dispensing.optionalNotes')}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            {t('dispensing.totalQuantity', { qty: totalQty })}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {hasInsufficientStock && canRequestStock ? (
+              <Button asChild variant="outline">
+                <Link href={requestStockHref}>{t('actions.requestStock')}</Link>
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              disabled={!selectedBeneficiary || lines.length === 0 || hasInsufficientStock}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {t('actions.reviewConfirm')}
+            </Button>
+          </div>
+        </div>
       </section>
 
       {confirmOpen ? (
@@ -524,7 +576,10 @@ export default function DispensingPage() {
           </p>
           <ul className="space-y-2 text-sm">
             {linesWithLiveAvailability.map((line) => (
-              <li key={line.medicineId} className="flex flex-wrap items-baseline justify-between gap-2">
+              <li
+                key={line.medicineId}
+                className="flex flex-wrap items-baseline justify-between gap-2"
+              >
                 <span>
                   <span className="text-xs text-muted-foreground">
                     {t(
@@ -590,7 +645,7 @@ export default function DispensingPage() {
               <div className="font-medium">
                 {med.medicineName} {dash} {med.quantity}
               </div>
-              <ul className="ml-4 list-disc text-muted-foreground">
+              <ul className="ms-4 list-disc text-muted-foreground">
                 {med.batches.map((batch) => (
                   <li key={`${batch.batchNumber}-${batch.quantity}`}>
                     {t('dispensing.batchLine', {
