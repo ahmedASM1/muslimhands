@@ -406,14 +406,13 @@ export class MedicinesService {
         'الشكل',
         'الشكل_الصيدلاني',
       );
+      const dosageFallback: SharedDosageForm =
+        parsed.dosageForm ??
+        dosageFormFromUnitLabel(unitRaw) ??
+        SharedDosageForm.OTHER;
       let dosageForm: DosageForm = isSupply
         ? DosageForm.OTHER
-        : normalizeDosageForm(
-            dosageFromFile,
-            parsed.dosageForm ??
-              dosageFormFromUnitLabel(unitRaw) ??
-              DosageForm.OTHER,
-          );
+        : (normalizeDosageForm(dosageFromFile, dosageFallback) as DosageForm);
 
       let strength = isSupply
         ? undefined
