@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useI18n } from '@/i18n';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -18,6 +18,9 @@ import { useAuth } from '@/lib/auth-context';
 import { DOSAGE_FORMS, dosageFormLabel } from '@/lib/catalog';
 import { hasPermission } from '@/lib/permissions';
 import { useToast } from '@/lib/toast';
+import { CATALOG_ITEM_TYPE } from '@mh/shared';
+
+type CatalogMode = typeof CATALOG_ITEM_TYPE.MEDICINE | typeof CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
 
 interface NamedRef {
   id: string;
@@ -80,6 +83,18 @@ export default function MedicinesPage() {
   const { user } = useAuth();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const catalogMode: CatalogMode = useMemo(() => {
+    const fromQuery = searchParams.get('type')?.toUpperCase();
+    if (fromQuery === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY || pathname.includes('medical-supplies')) {
+      return CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
+    }
+    return CATALOG_ITEM_TYPE.MEDICINE;
+  }, [pathname, searchParams]);
+
+  const isSupplies = catalogMode === CATALOG_ITEM_TYPE.MEDICAL_SUPPLY;
 
   const medicineSchema = useMemo(
     () =>
@@ -102,7 +117,6 @@ export default function MedicinesPage() {
   );
   const canCreate = hasPermission(user, 'medicines:create');
   const canUpdate = hasPermission(user, 'medicines:update');
-  const searchParams = useSearchParams();
   const [search, setSearch] = useState(() => searchParams.get('search') ?? '');
   const [categoryId, setCategoryId] = useState('');
   const [status, setStatus] = useState('');
@@ -113,21 +127,27 @@ export default function MedicinesPage() {
   const [selected, setSelected] = useState<MedicineRow | null>(null);
 
   const path = useMemo(() => {
-    const params = new URLSearchParams({ limit: '15', page: String(page), sortBy: 'name' });
+    const params = new URLSearchParams({
+      limit: '15',
+      page: String(page),
+      sortBy: 'name',
+      itemType: catalogMode,
+    });
     if (search) params.set('search', search);
     if (categoryId) params.set('categoryId', categoryId);
     if (status) params.set('isActive', status === 'ACTIVE' ? 'true' : 'false');
     if (dosageForm) params.set('dosageForm', dosageForm);
     return `/medicines?${params.toString()}`;
-  }, [search, categoryId, status, dosageForm, page]);
+  }, [search, categoryId, status, dosageForm, page, catalogMode]);
 
   const medicines = useQuery({
     queryKey: ['medicines', path],
     queryFn: () => apiList<MedicineRow>(path),
   });
   const categories = useQuery({
-    queryKey: ['categories-active'],
-    queryFn: () => apiList<NamedRef>('/categories?limit=100&isActive=true'),
+    queryKey: ['categories-active', catalogMode],
+    queryFn: () =>
+      apiList<NamedRef>(`/categories?limit=100&isActive=true&itemType=${encodeURIComponent(catalogMode)}`),
   });
   const units = useQuery({
     queryKey: ['units-active'],
@@ -146,7 +166,7 @@ export default function MedicinesPage() {
       genericName: '',
       brandName: '',
       categoryId: '',
-      dosageForm: 'TABLET',
+      dosageForm: isSupplies ? 'OTHER' : 'TABLET',
       strength: '',
       unitId: '',
       sku: '',
@@ -161,7 +181,16 @@ export default function MedicinesPage() {
   const watchedCategoryId = useWatch({ control: form.control, name: 'categoryId' });
   const watchedDosageForm = useWatch({ control: form.control, name: 'dosageForm' });
   const selectedCategory = (categories.data?.items ?? []).find((item) => item.id === watchedCategoryId);
-  const strengthRequired = needsStrength(watchedDosageForm, selectedCategory?.itemType);
+  const strengthRequired = needsStrength(watchedDosageForm, selectedCategory?.itemType ?? catalogMode);
+
+  useEffect(() => {
+    if (isSupplies) {
+      setDosageForm('');
+      if (form.getValues('dosageForm') !== 'OTHER') {
+        form.setValue('dosageForm', 'OTHER');
+      }
+    }
+  }, [isSupplies, form]);
 
   useEffect(() => {
     if (!selectedCategory) return;
@@ -175,7 +204,10 @@ export default function MedicinesPage() {
   const save = useMutation({
     mutationFn: (values: MedicineForm) => {
       const category = (categories.data?.items ?? []).find((item) => item.id === values.categoryId);
-      if (needsStrength(values.dosageForm, category?.itemType) && !(values.strength ?? '').trim()) {
+      if (
+        needsStrength(values.dosageForm, category?.itemType ?? catalogMode) &&
+        !(values.strength ?? '').trim()
+      ) {
         throw new Error(t('inventory.medicines.validation.strengthRequired'));
       }
       const body = {
@@ -187,16 +219,35 @@ export default function MedicinesPage() {
         strength: values.strength || undefined,
         description: values.description || undefined,
         referenceValue: values.referenceValue ? Number(values.referenceValue) : undefined,
+        dosageForm: isSupplies ? 'OTHER' : values.dosageForm,
       };
       return editing
         ? apiRequest(`/medicines/${editing.id}`, { method: 'PATCH', body })
         : apiRequest('/medicines', { method: 'POST', body });
     },
     onSuccess: () => {
-      toast.push(editing ? t('toasts.medicineUpdated') : t('toasts.medicineCreated'));
+      toast.push(
+        editing
+          ? t(isSupplies ? 'toasts.supplyUpdated' : 'toasts.medicineUpdated')
+          : t(isSupplies ? 'toasts.supplyCreated' : 'toasts.medicineCreated'),
+      );
       setOpen(false);
       setEditing(null);
-      form.reset();
+      form.reset({
+        name: '',
+        genericName: '',
+        brandName: '',
+        categoryId: '',
+        dosageForm: isSupplies ? 'OTHER' : 'TABLET',
+        strength: '',
+        unitId: '',
+        sku: '',
+        barcode: '',
+        minimumStock: 0,
+        reorderQuantity: 0,
+        referenceValue: '',
+        description: '',
+      });
       client.invalidateQueries({ queryKey: ['medicines'] });
     },
     onError: (error) => toast.push((error as Error).message, 'error'),
@@ -238,26 +289,53 @@ export default function MedicinesPage() {
   const emDash = t('common.emDash');
 
   const tableHeaders = useMemo(
-    () => [
-      t('table.medicine'),
-      t('table.genericName'),
-      t('table.strength'),
-      t('table.dosageForm'),
-      t('table.category'),
-      t('table.unit'),
-      t('table.sku'),
-      t('table.barcode'),
-      t('table.minimumStock'),
-      t('table.reorderQuantity'),
-      t('table.status'),
-      t('table.actions'),
-    ],
-    [t],
+    () =>
+      isSupplies
+        ? [
+            t('table.supply'),
+            t('table.category'),
+            t('table.unit'),
+            t('table.sku'),
+            t('table.barcode'),
+            t('table.minimumStock'),
+            t('table.reorderQuantity'),
+            t('table.status'),
+            t('table.actions'),
+          ]
+        : [
+            t('table.medicine'),
+            t('table.genericName'),
+            t('table.strength'),
+            t('table.dosageForm'),
+            t('table.category'),
+            t('table.unit'),
+            t('table.sku'),
+            t('table.barcode'),
+            t('table.minimumStock'),
+            t('table.reorderQuantity'),
+            t('table.status'),
+            t('table.actions'),
+          ],
+    [t, isSupplies],
   );
 
   function startCreate() {
     setEditing(null);
-    form.reset();
+    form.reset({
+      name: '',
+      genericName: '',
+      brandName: '',
+      categoryId: '',
+      dosageForm: isSupplies ? 'OTHER' : 'TABLET',
+      strength: '',
+      unitId: '',
+      sku: '',
+      barcode: '',
+      minimumStock: 0,
+      reorderQuantity: 0,
+      referenceValue: '',
+      description: '',
+    });
     setOpen(true);
   }
 
@@ -285,8 +363,12 @@ export default function MedicinesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">{t('inventory.medicines.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('inventory.medicines.subtitle')}</p>
+          <h1 className="text-2xl font-semibold">
+            {t(isSupplies ? 'inventory.supplies.title' : 'inventory.medicines.title')}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {t(isSupplies ? 'inventory.supplies.subtitle' : 'inventory.medicines.subtitle')}
+          </p>
         </div>
         {canCreate ? (
           <div className="flex flex-wrap gap-2">
@@ -304,32 +386,68 @@ export default function MedicinesPage() {
                 event.target.value = '';
               }}
             />
-            <Button type="button" onClick={startCreate}>{t('actions.addMedicine')}</Button>
+            <Button type="button" onClick={startCreate}>
+              {t(isSupplies ? 'actions.addSupply' : 'actions.addMedicine')}
+            </Button>
           </div>
         ) : null}
       </div>
 
       {canCreate ? <p className="text-xs text-muted-foreground">{t('inventory.medicines.importHint')}</p> : null}
 
-      <div className="grid gap-2 md:grid-cols-4">
-        <Input placeholder={t('inventory.medicines.searchPlaceholder')} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
-        <select className="h-10 rounded-md border px-3 text-sm" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPage(1); }}>
+      <div className={`grid gap-2 ${isSupplies ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
+        <Input
+          placeholder={t('inventory.medicines.searchPlaceholder')}
+          value={search}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setPage(1);
+          }}
+        />
+        <select
+          className="h-10 rounded-md border px-3 text-sm"
+          value={categoryId}
+          onChange={(event) => {
+            setCategoryId(event.target.value);
+            setPage(1);
+          }}
+        >
           <option value="">{t('common.allCategories')}</option>
           {(categories.data?.items ?? []).map((item) => (
-            <option key={item.id} value={item.id}>{item.name}</option>
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
           ))}
         </select>
-        <select className="h-10 rounded-md border px-3 text-sm" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+        <select
+          className="h-10 rounded-md border px-3 text-sm"
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value);
+            setPage(1);
+          }}
+        >
           <option value="">{t('common.allStatuses')}</option>
           <option value="ACTIVE">{t('status.ACTIVE')}</option>
           <option value="INACTIVE">{t('status.INACTIVE')}</option>
         </select>
-        <select className="h-10 rounded-md border px-3 text-sm" value={dosageForm} onChange={(event) => { setDosageForm(event.target.value); setPage(1); }}>
-          <option value="">{t('inventory.medicines.allDosageForms')}</option>
-          {DOSAGE_FORMS.map((item) => (
-            <option key={item} value={item}>{dosageFormLabel(t, item)}</option>
-          ))}
-        </select>
+        {!isSupplies ? (
+          <select
+            className="h-10 rounded-md border px-3 text-sm"
+            value={dosageForm}
+            onChange={(event) => {
+              setDosageForm(event.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">{t('inventory.medicines.allDosageForms')}</option>
+            {DOSAGE_FORMS.map((item) => (
+              <option key={item} value={item}>
+                {dosageFormLabel(t, item)}
+              </option>
+            ))}
+          </select>
+        ) : null}
       </div>
 
       {medicines.isLoading ? <div className="h-32 animate-pulse rounded-lg bg-muted" /> : null}
@@ -338,8 +456,14 @@ export default function MedicinesPage() {
       {!medicines.isLoading && rows.length === 0 ? (
         <Card>
           <CardContent className="space-y-3 p-8 text-center">
-            <p className="text-sm text-muted-foreground">{t('inventory.medicines.empty')}</p>
-            {canCreate ? <Button type="button" onClick={startCreate}>{t('actions.addMedicine')}</Button> : null}
+            <p className="text-sm text-muted-foreground">
+              {t(isSupplies ? 'inventory.supplies.empty' : 'inventory.medicines.empty')}
+            </p>
+            {canCreate ? (
+              <Button type="button" onClick={startCreate}>
+                {t(isSupplies ? 'actions.addSupply' : 'actions.addMedicine')}
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       ) : (
@@ -360,9 +484,13 @@ export default function MedicinesPage() {
                       {row.name}
                     </button>
                   </td>
-                  <td className="px-3 py-2">{row.genericName || emDash}</td>
-                  <td className="px-3 py-2">{row.strength || emDash}</td>
-                  <td className="px-3 py-2">{dosageFormLabel(t, row.dosageForm)}</td>
+                  {!isSupplies ? (
+                    <>
+                      <td className="px-3 py-2">{row.genericName || emDash}</td>
+                      <td className="px-3 py-2">{row.strength || emDash}</td>
+                      <td className="px-3 py-2">{dosageFormLabel(t, row.dosageForm)}</td>
+                    </>
+                  ) : null}
                   <td className="px-3 py-2">{row.category?.name ?? emDash}</td>
                   <td className="px-3 py-2">{row.unit?.name ?? emDash}</td>
                   <td className="px-3 py-2">{row.sku}</td>
@@ -409,7 +537,11 @@ export default function MedicinesPage() {
 
       <FormModal
         open={open}
-        title={editing ? t('actions.editMedicine') : t('actions.addMedicine')}
+        title={
+          editing
+            ? t(isSupplies ? 'actions.editSupply' : 'actions.editMedicine')
+            : t(isSupplies ? 'actions.addSupply' : 'actions.addMedicine')
+        }
         onClose={() => setOpen(false)}
         className="max-w-4xl"
       >
@@ -480,12 +612,16 @@ export default function MedicinesPage() {
                 <select
                   id="medicine-dosage"
                   className="h-10 w-full rounded-md border px-3 text-sm"
+                  disabled={isSupplies}
                   {...form.register('dosageForm')}
                 >
                   {DOSAGE_FORMS.map((item) => (
                     <option key={item} value={item}>{dosageFormLabel(t, item)}</option>
                   ))}
                 </select>
+                {isSupplies ? (
+                  <p className="text-xs text-muted-foreground">{t('inventory.supplies.dosageHint')}</p>
+                ) : null}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="medicine-strength">

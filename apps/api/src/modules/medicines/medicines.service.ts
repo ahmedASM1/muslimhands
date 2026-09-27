@@ -6,7 +6,7 @@
 } from '@nestjs/common';
 import { AuditAction, DosageForm as SharedDosageForm, normalizeCatalogItemType } from '@mh/shared';
 import { DosageForm, Prisma } from '@prisma/client';
-import { IsBooleanString, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { IsBooleanString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -31,6 +31,11 @@ export class MedicineQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsBooleanString()
   isActive?: string;
+
+  /** MEDICINE | MEDICAL_SUPPLY | custom category item type */
+  @IsOptional()
+  @IsString()
+  itemType?: string;
 }
 
 @Injectable()
@@ -53,6 +58,14 @@ export class MedicinesService {
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.dosageForm ? { dosageForm: query.dosageForm } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive === 'true' } : {}),
+      ...(query.itemType
+        ? {
+            category: {
+              deletedAt: null,
+              itemType: normalizeCatalogItemType(query.itemType),
+            },
+          }
+        : {}),
       ...(query.search
         ? {
             OR: [

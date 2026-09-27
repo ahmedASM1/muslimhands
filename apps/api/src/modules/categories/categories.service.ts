@@ -1,6 +1,6 @@
 ﻿import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, normalizeCatalogItemType, SYSTEM_CATALOG_ITEM_TYPES } from '@mh/shared';
-import { IsBooleanString, IsOptional } from 'class-validator';
+import { IsBooleanString, IsOptional, IsString } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -10,6 +10,10 @@ export class CategoryQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsBooleanString()
   isActive?: string;
+
+  @IsOptional()
+  @IsString()
+  itemType?: string;
 }
 
 @Injectable()
@@ -23,6 +27,7 @@ export class CategoriesService {
     const where = {
       deletedAt: null,
       ...(query.isActive !== undefined ? { isActive: query.isActive === 'true' } : {}),
+      ...(query.itemType ? { itemType: normalizeCatalogItemType(query.itemType) } : {}),
       ...(query.search
         ? {
             OR: [

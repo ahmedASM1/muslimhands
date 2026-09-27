@@ -20,6 +20,7 @@ import {
   User,
   Users,
   UsersRound,
+  Bandage,
 } from 'lucide-react';
 import type { AuthenticatedUser } from '@mh/shared';
 import { hasPermission } from '@/lib/permissions';
@@ -91,6 +92,7 @@ const ICON_BY_HREF: Record<string, LucideIcon> = {
   '/settings': Settings,
   '/profile': User,
   '/inventory/medicines': Pill,
+  '/inventory/medical-supplies': Bandage,
   '/inventory/categories': Tags,
   '/inventory/units': Ruler,
   '/inventory/batches': Package,
@@ -113,6 +115,7 @@ function adminNav(): NavSection[] {
         { href: '/warehouse/receipts', labelKey: 'nav.receipts', permission: PERMISSIONS.RECEIPTS_READ },
         { href: '/warehouse/movements', labelKey: 'nav.stockMovements', permission: PERMISSIONS.STOCK_MOVEMENTS_READ },
         { href: '/inventory/medicines', labelKey: 'nav.medicines', permission: PERMISSIONS.MEDICINES_READ },
+        { href: '/inventory/medical-supplies', labelKey: 'nav.medicalSupplies', permission: PERMISSIONS.MEDICINES_READ },
         { href: '/inventory/batches', labelKey: 'nav.batches', permission: PERMISSIONS.BATCHES_READ },
         { href: '/inventory/categories', labelKey: 'nav.categories', permission: PERMISSIONS.CATEGORIES_READ },
         { href: '/inventory/units', labelKey: 'nav.units', permission: PERMISSIONS.UNITS_READ },
@@ -167,6 +170,7 @@ function warehouseNav(): NavSection[] {
         { href: '/warehouse/receipts', labelKey: 'nav.receipts', permission: PERMISSIONS.RECEIPTS_READ },
         { href: '/warehouse/movements', labelKey: 'nav.stockMovements', permission: PERMISSIONS.STOCK_MOVEMENTS_READ },
         { href: '/inventory/medicines', labelKey: 'nav.medicines', permission: PERMISSIONS.MEDICINES_READ },
+        { href: '/inventory/medical-supplies', labelKey: 'nav.medicalSupplies', permission: PERMISSIONS.MEDICINES_READ },
         { href: '/inventory/batches', labelKey: 'nav.batches', permission: PERMISSIONS.BATCHES_READ },
       ],
     },

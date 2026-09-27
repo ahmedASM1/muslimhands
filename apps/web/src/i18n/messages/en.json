@@ -73,6 +73,7 @@
     "receipts": "Receipts",
     "stockMovements": "Stock Movements",
     "medicines": "Medicines",
+    "medicalSupplies": "Medical Supplies",
     "batches": "Batches",
     "categories": "Categories",
     "units": "Units",
@@ -377,6 +378,10 @@
     "POWDER": "Powder",
     "OTHER": "Other"
   },
+  "catalogTypes": {
+    "MEDICINE": "Medicines",
+    "MEDICAL_SUPPLY": "Medical Supplies"
+  },
   "status": {
     "IN_STOCK": "In stock",
     "LOW_STOCK": "Low stock",
@@ -585,6 +590,7 @@
   },
   "table": {
     "medicine": "Medicine",
+    "supply": "Medical supply",
     "batch": "Batch",
     "expiry": "Expiry",
     "quantity": "Quantity",
@@ -766,6 +772,8 @@
     "managePermissions": "Manage permissions",
     "addMedicine": "Add Medicine",
     "editMedicine": "Edit medicine",
+    "addSupply": "Add Medical Supply",
+    "editSupply": "Edit medical supply",
     "addBatch": "Add Batch",
     "editBatch": "Edit batch",
     "addUnit": "Add Unit",
@@ -805,6 +813,8 @@
     "medicineCreated": "Medicine created",
     "medicineUpdated": "Medicine updated",
     "medicineStatusUpdated": "Medicine status updated",
+    "supplyCreated": "Medical supply created",
+    "supplyUpdated": "Medical supply updated",
     "batchCreated": "Batch created",
     "batchUpdated": "Batch updated",
     "unitCreated": "Unit created",
@@ -920,16 +930,25 @@
     "by": "By"
   },
   "dispensing": {
-    "title": "Dispense medicine",
+    "title": "Dispense",
     "subtitle": "Free distribution. Stock is allocated by FEFO on the server — no payment, no checkout.",
     "historyLink": "History",
+    "dispenseType": "Dispense type",
+    "dispenseTypeHint": "Choose whether you are dispensing medicines or medical supplies.",
+    "typeMedicineHint": "Show medicines only",
+    "typeSupplyHint": "Show medical supplies only",
+    "selectTypeFirst": "Select a dispense type above to load the matching items.",
+    "confirmType": "Type",
     "beneficiary": "Beneficiary",
     "searchBeneficiary": "Search by name, number, or phone",
     "manageBeneficiaries": "Manage beneficiaries",
     "medicines": "Medicines",
+    "supplies": "Medical supplies",
     "stockLoadError": "Unable to load pharmacy stock. Available quantities may be wrong until this is fixed.",
     "searchMedicine": "Search medicine",
+    "searchSupply": "Search medical supply",
     "selectMedicine": "Select medicine",
+    "selectSupply": "Select medical supply",
     "medicineExpiredOnly": "{{name}} · Expired stock only",
     "medicineAvail": "{{name}} · avail {{avail}}",
     "availableNonExpired": "Available (non-expired): {{avail}}",
@@ -940,7 +959,8 @@
     "estTotalValue": "Est. total value",
     "insufficientStock": "Insufficient stock",
     "noMedicinesSelected": "No medicines selected yet.",
-    "insufficientBanner": "Some requested medicines do not have enough valid stock.",
+    "noSuppliesSelected": "No medical supplies selected yet.",
+    "insufficientBanner": "Some requested items do not have enough valid stock.",
     "requestFromWarehouse": "Request stock from the warehouse",
     "askManagerSupply": "Ask your pharmacy manager to create a supply request.",
     "optionalNotes": "Optional notes",
@@ -953,12 +973,12 @@
     "dispensedTitle": "Dispensed · {{number}}",
     "batchLine": "Batch {{batchNumber}} — {{quantity}}",
     "historyTitle": "Dispensing history",
-    "historySubtitle": "Completed free-medicine distributions for this pharmacy.",
+    "historySubtitle": "Completed free distributions for this pharmacy.",
     "searchNumberBeneficiary": "Search number or beneficiary",
     "noRecords": "No dispensing records yet.",
     "staff": "Staff",
     "recordNotFound": "Record not found",
-    "medicinesFefo": "Medicines & FEFO batch allocations",
+    "medicinesFefo": "Items & FEFO batch allocations",
     "estimatedValue": "Estimated value: {{value}}",
     "batchExpires": "Batch {{batchNumber}} — {{quantity}} · expires {{date}}"
   },
@@ -1063,6 +1083,12 @@
         "reorderQuantity": "Reorder quantity:",
         "estimatedUnitValue": "Estimated unit value:"
       }
+    },
+    "supplies": {
+      "title": "Medical Supplies",
+      "subtitle": "Catalog of medical supplies (gloves, syringes, dressings, etc.). Stock is managed by warehouse and pharmacy inventory.",
+      "empty": "No medical supplies have been added yet.",
+      "dosageHint": "Dosage form is fixed to Other for medical supplies."
     },
     "batches": {
       "title": "Batches",

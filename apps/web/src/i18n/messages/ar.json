@@ -73,6 +73,7 @@
     "receipts": "الاستلامات",
     "stockMovements": "حركات المخزون",
     "medicines": "الأدوية",
+    "medicalSupplies": "مستلزمات طبية",
     "batches": "الدفعات",
     "categories": "التصنيفات",
     "units": "الوحدات",
@@ -377,6 +378,10 @@
     "POWDER": "مسحوق",
     "OTHER": "أخرى"
   },
+  "catalogTypes": {
+    "MEDICINE": "أدوية",
+    "MEDICAL_SUPPLY": "مستلزمات طبية"
+  },
   "status": {
     "IN_STOCK": "متوفر",
     "LOW_STOCK": "منخفض",
@@ -585,6 +590,7 @@
   },
   "table": {
     "medicine": "الدواء",
+    "supply": "مستلزم طبي",
     "batch": "الدفعة",
     "expiry": "انتهاء الصلاحية",
     "quantity": "الكمية",
@@ -733,6 +739,8 @@
     "managePermissions": "إدارة الصلاحيات",
     "addMedicine": "إضافة دواء",
     "editMedicine": "تعديل الدواء",
+    "addSupply": "إضافة مستلزم طبي",
+    "editSupply": "تعديل مستلزم طبي",
     "addBatch": "إضافة دفعة",
     "editBatch": "تعديل الدفعة",
     "addUnit": "إضافة وحدة",
@@ -805,6 +813,8 @@
     "medicineCreated": "تم إنشاء الدواء",
     "medicineUpdated": "تم تحديث الدواء",
     "medicineStatusUpdated": "تم تحديث حالة الدواء",
+    "supplyCreated": "تم إنشاء المستلزم الطبي",
+    "supplyUpdated": "تم تحديث المستلزم الطبي",
     "batchCreated": "تم إنشاء الدفعة",
     "batchUpdated": "تم تحديث الدفعة",
     "unitCreated": "تم إنشاء الوحدة",
@@ -920,16 +930,25 @@
     "by": "بواسطة"
   },
   "dispensing": {
-    "title": "صرف دواء",
+    "title": "صرف",
     "subtitle": "توزيع مجاني. يُخصَّص المخزون وفق FEFO على الخادم — دون دفع أو إتمام شراء.",
     "historyLink": "السجل",
+    "dispenseType": "نوع الصرف",
+    "dispenseTypeHint": "اختر ما إذا كنت تصرف أدوية أو مستلزمات طبية.",
+    "typeMedicineHint": "إظهار الأدوية فقط",
+    "typeSupplyHint": "إظهار المستلزمات الطبية فقط",
+    "selectTypeFirst": "اختر نوع الصرف أعلاه لتحميل العناصر المطابقة.",
+    "confirmType": "النوع",
     "beneficiary": "المستفيد",
     "searchBeneficiary": "ابحث بالاسم أو الرقم أو الهاتف",
     "manageBeneficiaries": "إدارة المستفيدين",
     "medicines": "الأدوية",
+    "supplies": "المستلزمات الطبية",
     "stockLoadError": "تعذّر تحميل مخزون الصيدلية. قد تكون الكميات المتاحة غير دقيقة حتى يُصلح ذلك.",
     "searchMedicine": "ابحث عن دواء",
+    "searchSupply": "ابحث عن مستلزم طبي",
     "selectMedicine": "اختر الدواء",
+    "selectSupply": "اختر المستلزم الطبي",
     "medicineExpiredOnly": "{{name}} · مخزون منتهٍ فقط",
     "medicineAvail": "{{name}} · متاح {{avail}}",
     "availableNonExpired": "المتاح (غير منتهٍ): {{avail}}",
@@ -940,7 +959,8 @@
     "estTotalValue": "القيمة الإجمالية التقديرية",
     "insufficientStock": "مخزون غير كافٍ",
     "noMedicinesSelected": "لم تُحدَّد أدوية بعد.",
-    "insufficientBanner": "بعض الأدوية المطلوبة لا يتوفر لها مخزون صالح كافٍ.",
+    "noSuppliesSelected": "لم تُحدَّد مستلزمات طبية بعد.",
+    "insufficientBanner": "بعض البنود المطلوبة لا يتوفر لها مخزون صالح كافٍ.",
     "requestFromWarehouse": "طلب مخزون من المستودع",
     "askManagerSupply": "اطلب من مدير الصيدلية إنشاء طلب توريد.",
     "optionalNotes": "ملاحظات (اختياري)",
@@ -953,12 +973,12 @@
     "dispensedTitle": "تم الصرف · {{number}}",
     "batchLine": "الدفعة {{batchNumber}} — {{quantity}}",
     "historyTitle": "سجل الصرف",
-    "historySubtitle": "عمليات توزيع الأدوية المجانية المكتملة لهذه الصيدلية.",
+    "historySubtitle": "عمليات التوزيع المجاني المكتملة لهذه الصيدلية.",
     "searchNumberBeneficiary": "ابحث بالرقم أو المستفيد",
     "noRecords": "لا توجد سجلات صرف بعد.",
     "staff": "الموظف",
     "recordNotFound": "السجل غير موجود",
-    "medicinesFefo": "الأدوية وتخصيص الدفعات وفق FEFO",
+    "medicinesFefo": "البنود وتخصيص الدفعات وفق FEFO",
     "estimatedValue": "القيمة التقديرية: {{value}}",
     "batchExpires": "الدفعة {{batchNumber}} — {{quantity}} · تنتهي {{date}}"
   },
@@ -1063,6 +1083,12 @@
         "reorderQuantity": "كمية إعادة الطلب:",
         "estimatedUnitValue": "القيمة التقديرية للوحدة:"
       }
+    },
+    "supplies": {
+      "title": "مستلزمات طبية",
+      "subtitle": "فهرس المستلزمات الطبية (قفازات، محاقن، ضمادات، إلخ). يُدار المخزون عبر المستودع والصيدلية.",
+      "empty": "لم تُضف أي مستلزمات طبية بعد.",
+      "dosageHint": "الشكل الصيدلاني ثابت على «أخرى» للمستلزمات الطبية."
     },
     "batches": {
       "title": "الدفعات",
