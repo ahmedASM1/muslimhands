@@ -102,6 +102,9 @@ export default function BeneficiariesPage() {
             required
           />
           <Input
+            type="tel"
+            dir="ltr"
+            className="dir-ltr"
             placeholder={t('beneficiaries.phoneOptional')}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
@@ -153,24 +156,40 @@ export default function BeneficiariesPage() {
       {items.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
+            <thead className="bg-muted/50">
               <tr>
-                <th className="px-3 py-2">{t('table.number')}</th>
-                <th className="px-3 py-2">{t('table.name')}</th>
-                <th className="px-3 py-2">{t('beneficiaries.phone')}</th>
-                <th className="px-3 py-2">{t('table.status')}</th>
-                <th className="px-3 py-2" />
+                <th className="px-3 py-2 text-start">{t('table.number')}</th>
+                <th className="px-3 py-2 text-start">{t('table.name')}</th>
+                <th className="px-3 py-2 text-start">{t('beneficiaries.phone')}</th>
+                <th className="px-3 py-2 text-start">{t('table.status')}</th>
+                <th className="px-3 py-2 text-start" />
               </tr>
             </thead>
             <tbody>
               {items.map((row) => (
                 <tr key={row.id} className="border-t">
-                  <td className="px-3 py-2">{row.beneficiaryNumber}</td>
-                  <td className="px-3 py-2">{row.fullName ?? row.name ?? dash}</td>
-                  <td className="px-3 py-2">{row.phone ?? dash}</td>
-                  <td className="px-3 py-2">{row.status}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-2">
+                  <td className="px-3 py-2 text-start">
+                    <span dir="ltr" className="dir-ltr inline-block font-mono text-xs sm:text-sm">
+                      {row.beneficiaryNumber}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-start">{row.fullName ?? row.name ?? dash}</td>
+                  <td className="px-3 py-2 text-start">
+                    {row.phone ? (
+                      <span dir="ltr" className="dir-ltr inline-block">
+                        {row.phone}
+                      </span>
+                    ) : (
+                      dash
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-start">
+                    <span dir="ltr" className="dir-ltr inline-block">
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-start">
+                    <div className="flex flex-wrap items-center justify-start gap-2">
                       <Button asChild variant="outline" size="sm">
                         <Link href={`/pharmacy/beneficiaries/${row.id}`}>{t('actions.view')}</Link>
                       </Button>

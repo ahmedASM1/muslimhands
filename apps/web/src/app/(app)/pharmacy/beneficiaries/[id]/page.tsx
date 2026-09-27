@@ -108,10 +108,17 @@ export default function BeneficiaryDetailPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm text-muted-foreground">{row.beneficiaryNumber}</p>
+          <p className="text-sm text-muted-foreground">
+            <span dir="ltr" className="dir-ltr inline-block">
+              {row.beneficiaryNumber}
+            </span>
+          </p>
           <h1 className="text-2xl font-semibold">{row.fullName}</h1>
           <p className="text-sm text-muted-foreground">
-            {t('beneficiaries.statusLabel')} {row.status}
+            {t('beneficiaries.statusLabel')}{' '}
+            <span dir="ltr" className="dir-ltr inline-block">
+              {row.status}
+            </span>
           </p>
         </div>
         <div className="flex gap-2">
@@ -141,11 +148,16 @@ export default function BeneficiaryDetailPage() {
         >
           <Input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
           <Input
+            type="tel"
+            dir="ltr"
+            className="dir-ltr"
             placeholder={t('beneficiaries.phone')}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
           />
           <Input
+            dir="ltr"
+            className="dir-ltr"
             placeholder={t('beneficiaries.externalReference')}
             value={externalReference}
             onChange={(e) => setExternalReference(e.target.value)}
@@ -174,11 +186,27 @@ export default function BeneficiaryDetailPage() {
         <dl className="grid max-w-2xl gap-3 text-sm md:grid-cols-2">
           <div>
             <dt className="text-muted-foreground">{t('beneficiaries.phone')}</dt>
-            <dd>{row.phone ?? dash}</dd>
+            <dd>
+              {row.phone ? (
+                <span dir="ltr" className="dir-ltr inline-block">
+                  {row.phone}
+                </span>
+              ) : (
+                dash
+              )}
+            </dd>
           </div>
           <div>
             <dt className="text-muted-foreground">{t('beneficiaries.externalReference')}</dt>
-            <dd>{row.externalReference ?? dash}</dd>
+            <dd>
+              {row.externalReference ? (
+                <span dir="ltr" className="dir-ltr inline-block">
+                  {row.externalReference}
+                </span>
+              ) : (
+                dash
+              )}
+            </dd>
           </div>
           <div>
             <dt className="text-muted-foreground">{t('beneficiaries.address')}</dt>
@@ -198,30 +226,33 @@ export default function BeneficiaryDetailPage() {
         ) : (
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-left">
+              <thead className="bg-muted/50">
                 <tr>
-                  <th className="px-3 py-2">{t('table.number')}</th>
-                  <th className="px-3 py-2">{t('table.date')}</th>
-                  <th className="px-3 py-2">{t('table.pharmacy')}</th>
-                  <th className="px-3 py-2">{t('beneficiaries.items')}</th>
+                  <th className="px-3 py-2 text-start">{t('table.number')}</th>
+                  <th className="px-3 py-2 text-start">{t('table.date')}</th>
+                  <th className="px-3 py-2 text-start">{t('table.pharmacy')}</th>
+                  <th className="px-3 py-2 text-start">{t('beneficiaries.items')}</th>
                 </tr>
               </thead>
               <tbody>
                 {(history.data?.items ?? []).map((item) => (
                   <tr key={item.id} className="border-t">
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-start">
                       <Link
                         href={`/pharmacy/dispensing/${item.id}`}
-                        className="text-primary hover:underline"
+                        className="dir-ltr inline-block text-primary hover:underline"
+                        dir="ltr"
                       >
                         {item.dispensingNumber}
                       </Link>
                     </td>
-                    <td className="px-3 py-2">
-                      {String(item.dispensedAt).replace('T', ' ').slice(0, 16)}
+                    <td className="px-3 py-2 text-start">
+                      <span dir="ltr" className="dir-ltr inline-block">
+                        {String(item.dispensedAt).replace('T', ' ').slice(0, 16)}
+                      </span>
                     </td>
-                    <td className="px-3 py-2">{item.pharmacy?.name ?? dash}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-start">{item.pharmacy?.name ?? dash}</td>
+                    <td className="px-3 py-2 text-start">
                       {item.items
                         .map((row) => `${row.medicineName} ×${row.quantity}`)
                         .join(', ')}

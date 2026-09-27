@@ -70,6 +70,12 @@
     text-align: start;
     unicode-bidi: isolate;
   }
+
+  /* Keep table headers and cells on the same edge in RTL */
+  table th,
+  table td {
+    text-align: start;
+  }
 }
 
 @layer utilities {
